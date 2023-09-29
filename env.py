@@ -6,6 +6,8 @@ Created on Fri May 19 10:16:01 2023
 @author: sascha
 """
 
+import pandas as pd
+
 from jax import random as jran
 from jax import numpy as jnp
 from jax import lax
@@ -24,8 +26,6 @@ class Env():
         self.rewprobs = jnp.asarray(rewprobs)
         self.matfile_dir = matfile_dir
 
-        self.choices = []
-        self.outcomes = []
         self.blocktype = self.define_blocktype()
 
     def load_matfiles(self, matfile_dir, blocknr, blocktype, sequence=1):
@@ -110,7 +110,8 @@ class Env():
         tb_block = 0
         random_block = 0
         self.data = {"trialsequence": [],
-                     "jokertypes": [], "blockidx": []}
+                     "jokertypes": [], 
+                     "blockidx": []}
         for block in range(num_blocks):
             "New block!"
             self.data["trialsequence"].append([-1])
@@ -181,8 +182,8 @@ class Env():
         matrices = [days, trials.T, lin_blocktype.T]
         key, outties = lax.scan(one_trial, key, matrices)
         choices, outcomes = outties
-        self.choices = choices
-        self.outcomes = outcomes
+        self.data["choices"] = choices
+        self.data["outcomes"] = outcomes
         
         return key
 
@@ -224,3 +225,55 @@ class Env():
         matrices = [days, trials.T, lin_blocktype.T, choices, outcomes]
         key, probs = lax.scan(one_trial, key, matrices)
         return probs
+
+
+    def envdata_to_df(self):
+        
+        import ipdb
+        import time
+        start = time.time()
+        num_agents = self.agent.num_agents
+        num_trials = len(self.data["trialsequence"])
+        df_data = {
+        'participantidx': [ag for ag in range(num_agents) for _ in range(num_trials)],
+        
+        'trialsequence': np.broadcast_to(np.array(self.data['trialsequence']),
+                                         (num_trials, num_agents)).reshape(num_trials*num_agents, 
+                                                                           order = 'F'),
+        
+        'jokertypes': np.broadcast_to(np.array(self.data['jokertypes']),
+                                         (num_trials, num_agents)).reshape(num_trials*num_agents,
+                                                                           order = 'F'),
+        
+        'blockidx': np.broadcast_to(np.array(self.data['blockidx']),
+                                    (num_trials, num_agents)).reshape(num_trials*num_agents,
+                                                                      order = 'F'),
+        
+        'choices': self.data['choices'].reshape(num_trials*num_agents, 
+                                                order = 'F'),
+        
+        'outcomes': self.data['outcomes'].reshape(num_trials*num_agents, 
+                                                  order = 'F'),
+        }
+
+        sim_df = pd.DataFrame(df_data, dtype=int)
+        sim_df['outcomes']
+        sim_df = sim_df[sim_df.trialsequence != -1] 
+        sim_df.reset_index(drop = True, inplace = True)
+        
+        "Add column 'trialidx'"
+        trialidx = [tt for _ in range(num_agents) for tt in range(len(sim_df)//num_agents)] # as seen in experiment, thus per participant
+        sim_df['trialidx'] = trialidx
+        
+        "Add column 'GDchoice'"
+        sim_df['GDchoice'] = sim_df.apply(lambda row: 
+                                          self.rewprobs[row['choices']] == \
+                                          np.max(self.rewprobs), axis = 1).astype(int)
+        
+        end = time.time()
+        print("Executed in %.2f seconds"%(end-start))
+        
+        return sim_df
+    
+    
+#%%

@@ -1,6 +1,7 @@
 # import ipdb
 from itertools import product
 
+import pandas as pd
 import numpy as np
 from jax import numpy as jnp
 from jax import lax, nn
@@ -434,7 +435,23 @@ class Vbm_B(Vbm):
 
 
 def simulation(num_agents=100, key=None):
-    "Simulates agent behaviour."
+    '''
+    Simulates agent behaviour for n agents in the same experiment 
+    (i.e. all experimental parameters identical for each agent)
+
+            Parameters:
+                    num_agents (int): Number of agents to simulate behaviour for
+
+            Returns:
+                    out (DataFrame): Experimental parameters and data
+                        'participantidx'
+                        'trialsequence'
+                        'trialidx'
+                        'jokertypes'
+                        'blockidx'
+                        'choices'
+                        'outcomes'
+    '''
     
     if key is None:
         key = jran.PRNGKey(np.random.randint(10000))
@@ -456,7 +473,8 @@ def simulation(num_agents=100, key=None):
     parameter = jran.uniform(key=key, minval=0, maxval=1,
                              shape=(1, num_agents, npar))
     _, key = jran.split(key)
-    lr_day1 = parameter[..., 0]*0.01
+    
+    lr_day1 = parameter[..., 0]*0.01 # so lr_day1 has shape (1, num_agents)
     theta_Q_day1 = parameter[..., 1]*6
     theta_rep_day1 = parameter[..., 2]*6
 
@@ -489,7 +507,9 @@ def simulation(num_agents=100, key=None):
                      matfile_dir='./matlabcode/clipre/')
     key = newenv.run(key=key)
     
-    return newenv.choices
+    out = newenv.envdata_to_df()
+        
+    return out
 
 def comp_groupdata(groupdata, for_ddm=1):
     """Trialsequence no jokers and RT are only important for DDM to determine the jokertype"""
@@ -542,6 +562,12 @@ def comp_groupdata(groupdata, for_ddm=1):
 
     return newgroupdata
 
-
 def repeat_interleave(x, num):
     return jnp.hstack([x[:, None]] * num).reshape(-1)
+
+def plot_simulated(sim_df):
+    "First remove entries where jokertypes == -1"
+    sim_df = sim_df[sim_df.jokertypes != -1]
+    grouped = sim_df.groupby(['blockidx', 'jokertypes'])
+    average = grouped['GDchoice'].mean()
+    
