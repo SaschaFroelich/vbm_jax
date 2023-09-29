@@ -13,7 +13,7 @@ def define_model(exp_data):
     theta_q = numpyro.sample('theta_q', dist.HalfNormal(5).expand(2))
     theta_r = numpyro.sample('theta_q', dist.HalfNormal(5).expand(2))
 
-    agent = mj.vbm_B(lr_day1=lrs[0], lr_day2=lrs[1], theta_Q_day1=theta_q[0],
+    agent = mj.Vbm_B(lr_day1=lrs[0], lr_day2=lrs[1], theta_Q_day1=theta_q[0],
                      theta_Q_day2=theta_q[1], theta_rep_day1=theta_r[0],
                      theta_rep_day2=theta_r[1], k=4.0,
                      Q_init=[[[0.2, 0, 0, 0.2]]])

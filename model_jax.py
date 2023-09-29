@@ -32,7 +32,7 @@ def for_inference():
     choices = data['Choices']
     outcomes = data['Outcomes']
 
-    agent = models.vbm_B()
+    agent = models.Vbm_B()
     # masks = choices != -10
     choices_bin = np.zeros_like(trials)
     for idx, (trial, choice) in enumerate(zip(trials, choices)):
@@ -45,7 +45,7 @@ def for_inference():
     carry_final, out = lax.scan(one_trial, carry, matrices)
 
 
-class vbm():
+class Vbm():
     "parameters: omega, dectemp, lr"
 
     def __init__(self, k, Q_init, **kwargs):
@@ -281,7 +281,7 @@ class vbm():
         return to_return, key
 
 
-class vbm_B(vbm):
+class Vbm_B(Vbm):
     "parameters: lr_day1, theta_Q_day1, theta_rep_day1, lr_day2, theta_Q_day2, theta_rep_day2"
 
     def specific_init(self, **kwargs):
@@ -476,7 +476,7 @@ def simulation(num_agents=100, key=None):
                         axis=1)
     Q_init_group.append(Q_init)
 
-    agent = vbm_B(lr_day1=jnp.asarray(lr_day1),
+    agent = Vbm_B(lr_day1=jnp.asarray(lr_day1),
                   theta_Q_day1=jnp.asarray(theta_Q_day1),
                   theta_rep_day1=jnp.asarray(theta_rep_day1),
                   lr_day2=jnp.asarray(lr_day2),
@@ -485,7 +485,7 @@ def simulation(num_agents=100, key=None):
                   k=k,
                   Q_init=jnp.asarray(Q_init))
     
-    newenv = env.env(agent, rewprobs=[0.8, 0.2, 0.2, 0.8],
+    newenv = env.Env(agent, rewprobs=[0.8, 0.2, 0.2, 0.8],
                      matfile_dir='./matlabcode/clipre/')
     key = newenv.run(key=key)
     

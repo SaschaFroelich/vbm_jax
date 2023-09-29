@@ -13,7 +13,7 @@ import scipy
 import numpy as np
 
 
-class env():
+class Env():
 
     def __init__(self, agent, rewprobs, matfile_dir, sequence=1):
         """sequence : 1 or 2
