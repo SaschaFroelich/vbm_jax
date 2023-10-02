@@ -85,13 +85,18 @@ if model == 'original':
                               k=torch.tensor(k),
                               Q_init=torch.tensor([[Q_init]]))
             
-        newenv = env.Env(newagent, rewprobs=[0.8, 0.2, 0.2, 0.8], matfile_dir = './matlabcode/clipre/')
+        newenv = env.Env(newagent, 
+                         rewprobs=[0.8, 0.2, 0.2, 0.8], 
+                         matfile_dir = './matlabcode/clipre/')
         
         newenv.run()
         
-        data = {"Choices": newenv.choices, "Outcomes": newenv.outcomes,
-                "Trialsequence": newenv.data["trialsequence"], "Blocktype": newenv.data["blocktype"],
-                    "Jokertypes": newenv.data["jokertypes"], "Blockidx": newenv.data["blockidx"]}
+        data = {"Choices": newenv.choices, 
+                "Outcomes": newenv.outcomes,
+                "Trialsequence": newenv.data["trialsequence"], 
+                "Blocktype": newenv.data["blocktype"],
+                "Jokertypes": newenv.data["jokertypes"], 
+                "Blockidx": newenv.data["blockidx"]}
             
         # utils.plot_results(pd.DataFrame(data), group = 0)
             
@@ -132,9 +137,12 @@ elif model == 'Vbm_timedep':
         
         newenv.run()
         
-        data = {"Choices": newenv.choices, "Outcomes": newenv.outcomes,\
-                "Trialsequence": newenv.data["trialsequence"], "Blocktype": newenv.data["blocktype"],\
-                    "Jokertypes": newenv.data["jokertypes"], "Blockidx": newenv.data["blockidx"]}
+        data = {"Choices": newenv.choices, 
+                "Outcomes": newenv.outcomes,
+                "Trialsequence": newenv.data["trialsequence"], 
+                "Blocktype": newenv.data["blocktype"],\
+                "Jokertypes": newenv.data["jokertypes"], 
+                "Blockidx": newenv.data["blockidx"]}
             
         # utils.plot_results(pd.DataFrame(data), group = 0)
             

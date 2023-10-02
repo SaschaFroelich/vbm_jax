@@ -1,6 +1,9 @@
 # import ipdb
 from itertools import product
 
+import ipdb
+import matplotlib.pyplot as plt
+import seaborn as sns
 import pandas as pd
 import numpy as np
 from jax import numpy as jnp
@@ -433,14 +436,14 @@ class Vbm_B(Vbm):
         "Sequence Counters"
         self.seq_counter = self.init_seq_counter.copy()
 
-
-def simulation(num_agents=100, key=None):
+def simulation(num_agents=100, key=None, **kwargs):
     '''
     Simulates agent behaviour for n agents in the same experiment 
     (i.e. all experimental parameters identical for each agent)
 
             Parameters:
                     num_agents (int): Number of agents to simulate behaviour for
+                    **kwargs : Model parameters (each a jax array with shape num_particles, num_agents)
 
             Returns:
                     out (DataFrame): Experimental parameters and data
@@ -469,26 +472,44 @@ def simulation(num_agents=100, key=None):
     Q_init_group = []
     # groupdata = []
 
-    "Simulate with random parameters"
-    parameter = jran.uniform(key=key, minval=0, maxval=1,
-                             shape=(1, num_agents, npar))
-    _, key = jran.split(key)
     
-    lr_day1 = parameter[..., 0]*0.01 # so lr_day1 has shape (1, num_agents)
-    theta_Q_day1 = parameter[..., 1]*6
-    theta_rep_day1 = parameter[..., 2]*6
-
-    lr_day2 = parameter[..., 3]*0.01
-    theta_Q_day2 = parameter[..., 4]*6
-    theta_rep_day2 = parameter[..., 5]*6
-
-    lr_day1_true.append(lr_day1)
-    theta_Q_day1_true.append(theta_Q_day1)
-    theta_rep_day1_true.append(theta_rep_day1)
-
-    lr_day2_true.append(lr_day2)
-    theta_Q_day2_true.append(theta_Q_day2)
-    theta_rep_day2_true.append(theta_rep_day2)
+    if 'lr_day1' in kwargs:
+        lr_day1 = kwargs['lr_day1'] # so lr_day1 has shape (1, num_agents)
+        theta_Q_day1 = kwargs['theta_Q_day1']
+        theta_rep_day1 = kwargs['theta_rep_day1']
+    
+        lr_day2 = kwargs['lr_day2']
+        theta_Q_day2 = kwargs['theta_Q_day2']
+        theta_rep_day2 = kwargs['theta_rep_day2']
+    
+        lr_day1_true.append(lr_day1)
+        theta_Q_day1_true.append(theta_Q_day1)
+        theta_rep_day1_true.append(theta_rep_day1)
+    
+        lr_day2_true.append(lr_day2)
+        theta_Q_day2_true.append(theta_Q_day2)
+        theta_rep_day2_true.append(theta_rep_day2)
+        
+    else:
+        "Simulate with random parameters"
+        parameter = jran.uniform(key=key, minval=0, maxval=1,
+                                 shape=(1, num_agents, npar))
+        _, key = jran.split(key)
+        lr_day1 = parameter[..., 0]*0.01 # so lr_day1 has shape (1, num_agents)
+        theta_Q_day1 = parameter[..., 1]*6
+        theta_rep_day1 = parameter[..., 2]*6
+    
+        lr_day2 = parameter[..., 3]*0.01
+        theta_Q_day2 = parameter[..., 4]*6
+        theta_rep_day2 = parameter[..., 5]*6
+    
+        lr_day1_true.append(lr_day1)
+        theta_Q_day1_true.append(theta_Q_day1)
+        theta_rep_day1_true.append(theta_rep_day1)
+    
+        lr_day2_true.append(lr_day2)
+        theta_Q_day2_true.append(theta_Q_day2)
+        theta_rep_day2_true.append(theta_rep_day2)
 
     Q_init = jnp.repeat(jnp.asarray([[[0.2, 0., 0., 0.2]]]), num_agents,
                         axis=1)
@@ -566,8 +587,19 @@ def repeat_interleave(x, num):
     return jnp.hstack([x[:, None]] * num).reshape(-1)
 
 def plot_simulated(sim_df):
+    '''
+    Jokertypes:
+        -1 no joker
+        0 random
+        1 congruent
+        2 incongruent
+    '''
     "First remove entries where jokertypes == -1"
     sim_df = sim_df[sim_df.jokertypes != -1]
     grouped = sim_df.groupby(['blockidx', 'jokertypes'])
     average = grouped['GDchoice'].mean()
     
+    new_df = pd.DataFrame(average)
+    fig,ax = plt.subplots()
+    sns.lineplot(data=new_df, x="blockidx", y="GDchoice", hue="jokertypes")
+    plt.show()
