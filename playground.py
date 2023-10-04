@@ -9,7 +9,7 @@ Created on Mon Oct  2 13:13:46 2023
 import model_jax as mj
 from jax import numpy as jnp
 
-num_agents = 1
+num_agents = 3
 
 theta_rep_day1 = 0.8
 theta_rep_day2 = 0
@@ -19,7 +19,7 @@ theta_Q_day2 = 3.
 lr_day1 = 0.00
 lr_day2 = 0.
 
-sim_df, outties = mj.simulation(num_agents = num_agents, 
+sim_df, env_data = mj.simulation(num_agents = num_agents, 
                        lr_day1 = jnp.asarray([[lr_day1]*num_agents]),
                        lr_day2 = jnp.asarray([[lr_day2]*num_agents]), 
                        
@@ -29,9 +29,9 @@ sim_df, outties = mj.simulation(num_agents = num_agents,
                        theta_rep_day1 = jnp.asarray([[theta_rep_day1]*num_agents]),
                        theta_rep_day2 = jnp.asarray([[theta_rep_day2]*num_agents]))
 
-choices = outties[0]
-outcomes = outties[1]
-Qs = outties[2][0]
+# choices = outties[0]
+# outcomes = outties[1]
+# Qs = outties[2][0]
 
 '''
 Jokertypes:

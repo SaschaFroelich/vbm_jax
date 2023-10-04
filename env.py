@@ -112,12 +112,15 @@ class Env():
         random_block = 0
         self.data = {"trialsequence": [],
                      "jokertypes": [], 
-                     "blockidx": []}
+                     "blockidx": [],
+                     "blocktype": []}
+        
         for block in range(num_blocks):
             "New block!"
             self.data["trialsequence"].append([-1])
             self.data["jokertypes"].append([-1])
-            self.data["blockidx"].append([block])
+            self.data["blockidx"].append([-1])
+            self.data["blocktype"].append([-1])
             # The index of the block in the current experiment
 
             current_blocktype = blocktype[block, 0]
@@ -128,11 +131,15 @@ class Env():
                     self.matfile_dir, tb_block, current_blocktype, sequence=sequence)
                 tb_block += 1
 
+                self.data["blocktype"].extend([[0]]*480)
+
             elif current_blocktype == 1:
                 "Random block"
                 seq_matlab, seq_no_jokers_matlab, jokertypes = self.load_matfiles(
                     self.matfile_dir, random_block, current_blocktype, sequence=sequence)
                 random_block += 1
+                
+                self.data["blocktype"].extend([[1]]*480)
 
             else:
                 raise Exception("Problem with los blocktypos.")
@@ -163,12 +170,11 @@ class Env():
             "matrices is [days, trials.T, lin_blocktype.T]"
             day, trial, blocktype = matrices
             key, Q, pppchoice, ppchoice, pchoice, seq_counter, rep, V = carry
-            current_choice, key = self.agent.choose_action(V, trial, day, key)
+            # print("bliblibli")
+            # print(type(trial))
+            # print(trial.shape)
+            current_choice, key = self.agent.choose_action(V, trial, key)
             outcome = jran.bernoulli(key, self.rewprobs[current_choice % 4])
-            # print("current_choice shape:")
-            # print(current_choice.shape)
-            # print("outcome shape is:")
-            # print(outcome.shape)
             current_choice = current_choice[0, ...]
             outcome = outcome[0, ...]
             _, key = jran.split(key)
@@ -186,8 +192,6 @@ class Env():
                               rep =rep,
                               V = V)
             
-            # print("Q Shape")
-            # print(self.agent.Q[-1].shape)
             outtie = [current_choice, outcome, Q]
             carry = [key, Q, pppchoice, ppchoice, pchoice, seq_counter, rep, V]
             return carry, outtie
@@ -215,44 +219,44 @@ class Env():
         
         return carry, choices, outcomes, Qs
 
-    def one_session(self, choices, outcomes, trials, blocktype, num_parts, key=None):
-        """
-        Should simulate choices if no choices are given, and compute probs if choices are given.
+    # def one_session(self, choices, outcomes, trials, blocktype, num_parts, key=None):
+    #     """
+    #     Should simulate choices if no choices are given, and compute probs if choices are given.
         
-        Parameters
-        ----------
+    #     Parameters
+    #     ----------
 
-        block_order : 1 or 2
-            Which block order to use (in case of Context =="all")
+    #     block_order : 1 or 2
+    #         Which block order to use (in case of Context =="all")
 
-        """
-        self.prepare_sims()
+    #     """
+    #     self.prepare_sims()
 
-        num_agents = num_parts
-        # The index of the block in the current experiment
+    #     num_agents = num_parts
+    #     # The index of the block in the current experiment
 
-        def one_trial(key, matrices):
-            "Computes response probabilities for dual-target trials"
-            "matrices is [days, trials.T, lin_blocktype.T, choices, outcomes]"
-            day, trial, blocktype, current_choice, outcome = matrices
-            probs = self.agent.compute_probs(trial, day)
-            _, key = jran.split(key)
-            self.agent.update(jnp.asarray(current_choice),
-                              jnp.asarray(outcome), blocktype,
-                              day=day, trial=trial)
-            outtie = [probs]
-            return key, outtie
+    #     def one_trial(key, matrices):
+    #         "Computes response probabilities for dual-target trials"
+    #         "matrices is [days, trials.T, lin_blocktype.T, choices, outcomes]"
+    #         day, trial, blocktype, current_choice, outcome = matrices
+    #         probs = self.agent.compute_probs(V, trial)
+    #         _, key = jran.split(key)
+    #         self.agent.update(jnp.asarray(current_choice),
+    #                           jnp.asarray(outcome), blocktype,
+    #                           day=day, trial=trial)
+    #         outtie = [probs]
+    #         return key, outtie
         
-        days = (np.array(self.data['blockidx']) > 5) + 1
-        trials = np.squeeze(self.data["trialsequence"])
-        lin_blocktype = jnp.hstack([-jnp.ones((14, 1), dtype=int),
-                                    blocktype.astype(int)])
-        lin_blocktype = jnp.repeat(lin_blocktype.reshape(-1)[None, ...],
-                                   num_agents, axis=0)
-        trials = jnp.repeat(trials[None, ...], num_agents, axis=0)
-        matrices = [days, trials.T, lin_blocktype.T, choices, outcomes]
-        key, probs = lax.scan(one_trial, key, matrices)
-        return probs
+    #     days = (np.array(self.data['blockidx']) > 5) + 1
+    #     trials = np.squeeze(self.data["trialsequence"])
+    #     lin_blocktype = jnp.hstack([-jnp.ones((14, 1), dtype=int),
+    #                                 blocktype.astype(int)])
+    #     lin_blocktype = jnp.repeat(lin_blocktype.reshape(-1)[None, ...],
+    #                                num_agents, axis=0)
+    #     trials = jnp.repeat(trials[None, ...], num_agents, axis=0)
+    #     matrices = [days, trials.T, lin_blocktype.T, choices, outcomes]
+    #     key, probs = lax.scan(one_trial, key, matrices)
+    #     return probs
 
 
     def envdata_to_df(self):

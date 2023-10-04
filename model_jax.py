@@ -14,39 +14,39 @@ import jax
 import env
 # import models_torch as models
 
-def for_inference():
-    def one_trial(t, matrices):
-        trial, day, blocktype, choice, outcome = matrices
-        if trial == -1:
-            agent.update(-1, -1, -1, day=day, trialstimulus=trial)
-        else:
-            if trial > 10:
-                t += 1
-                probs = agent.compute_probs(trial, day)
-            else:
-                probs = jnp.asarray((0, 0))
-            agent.update(choice, outcome, blocktype, day=day,
-                         trialstimulus=trial, t=t)
-        return t, probs
+# def for_inference():
+#     def one_trial(t, matrices):
+#         trial, day, blocktype, choice, outcome = matrices
+#         if trial == -1:
+#             agent.update(-1, -1, -1, day=day, trialstimulus=trial)
+#         else:
+#             if trial > 10:
+#                 t += 1
+#                 probs = agent.compute_probs(trial, day)
+#             else:
+#                 probs = jnp.asarray((0, 0))
+#             agent.update(choice, outcome, blocktype, day=day,
+#                          trialstimulus=trial, t=t)
+#         return t, probs
 
-    trials = data['Trialsequences']
-    blockidx = data['Blockidx']
-    day = blockidx > 5
-    blocktype = data['Blocktype']
-    choices = data['Choices']
-    outcomes = data['Outcomes']
+#     trials = data['Trialsequences']
+#     blockidx = data['Blockidx']
+#     day = blockidx > 5
+#     blocktype = data['Blocktype']
+#     choices = data['Choices']
+#     outcomes = data['Outcomes']
 
-    agent = models.Vbm_B()
-    # masks = choices != -10
-    choices_bin = np.zeros_like(trials)
-    for idx, (trial, choice) in enumerate(zip(trials, choices)):
-        options = agent.find_resp_options(trial)
-        choices_bin[idx] = choice != options[0]
+#     agent = models.Vbm_B()
+#     # masks = choices != -10
+#     choices_bin = np.zeros_like(trials)
+#     for idx, (trial, choice) in enumerate(zip(trials, choices)):
+#         options = agent.find_resp_options(trial)
+#         choices_bin[idx] = choice != options[0]
 
-    carry = -1
-    matrices = [trials, day, blocktype, choices, outcomes]
+#     carry = -1
+#     matrices = [trials, day, blocktype, choices, outcomes]
 
-    carry_final, out = lax.scan(one_trial, carry, matrices)
+#     carry_final, out = lax.scan(one_trial, carry, matrices)
 
 
 class Vbm():
@@ -150,7 +150,26 @@ class Vbm():
 
         return par_dict
 
-    def compute_probs(self, V, trial, day):
+    def compute_probs(self, V, trial):
+        '''
+        
+        Parameters
+        ----------
+        V : list containing array, shape [num_particles, num_agents, 4]
+            
+        trial : array with shape [num_agents]
+            DESCRIPTION.
+            
+        day : array with shape [1]
+            DESCRIPTION.
+
+        Returns
+        -------
+        probs : TYPE
+            DESCRIPTION.
+
+        '''
+        
         option1, option2 = self.find_resp_options(trial)
 
         "Replace both response options with 1 for those participants who did not see a joker trial"
@@ -267,7 +286,7 @@ class Vbm():
             (-self.bad_choice + option2_python) * cond
         return option1_python, option2_python
 
-    def choose_action(self, V, trial, day, key):
+    def choose_action(self, V, trial, key):
         "INPUT: trial (in 1-indexing (i.e. MATLAB notation))"
         "OUTPUT: choice response digit (in 0-indexing notation)"
         # assert trial > -1, "Sascha dumb"
@@ -277,12 +296,8 @@ class Vbm():
         cond_trial = trial < 10
         "Dual-target trial"
         option1, option2 = self.find_resp_options(trial)
-        probs = self.compute_probs(V, trial, day)
-        # print("probs shape:")
-        # print(probs.shape)
+        probs = self.compute_probs(V, trial)
         choice_sample = jran.uniform(key, shape=probs.shape[:2]) > probs[:, :, 0]
-        # print("choice_sample shape:")
-        # print(choice_sample.shape)
         _, key = jran.split(key)
         choice_python = option2 * choice_sample + \
             option1 * (1-choice_sample)
@@ -291,8 +306,6 @@ class Vbm():
         actual_choice = self.bad_choice * \
             (1 - cond_error) + choice_if_noerror * cond_error
             
-        # print("actual_choice shape:")
-        # print(actual_choice.shape)
         return actual_choice, key
 
 
@@ -316,29 +329,12 @@ class Vbm_B(Vbm):
         "Model-specific function"
         "V(ai) = Θ_r*rep_val(ai) + Θ_Q*Q(ai)"
 
-        # print("====== update_V ======")
-        # print("rep shape:")
-        # print(rep[-1].shape)
-        # print("Q shape:")
-        # print(Q[-1].shape)
-        # print("self.theta_rep_day1 shape:")
-        # print(self.theta_rep_day1.shape)
-        # print("self.theta_rep_day2 shape:")
-        # print(self.theta_rep_day2.shape)
-        # print("day:")
-        # print(type(day))
-
         theta_rep = jnp.array([self.theta_rep_day1,
                                self.theta_rep_day2])[1 * (day == 2)]
         
         theta_Q = jnp.array([self.theta_Q_day1, 
                              self.theta_Q_day2])[1 * (day == 2)]
         
-        # print("theta_rep shape:")
-        # print(theta_rep.shape)
-        
-        # print("theta_Q shape:")
-        # print(theta_Q.shape)
 
         # V-Values for actions (i.e. weighted action values)
         V0 = theta_rep * rep[-1][..., 0] + theta_Q*Q[-1][..., 0]
@@ -348,10 +344,6 @@ class Vbm_B(Vbm):
 
         V = [jnp.stack((V0, V1, V2, V3), 2)]
         self.V = [jnp.stack((V0, V1, V2, V3), 2)]
-        
-        # print("self.V[-1] shape:")
-        # print(self.V[-1].shape)
-        # print("====== ======")
         
         return V
 
@@ -384,36 +376,68 @@ class Vbm_B(Vbm):
                rep,
                V,
                **kwargs):
-        
-        print("Printing all input shapes Babedibubedi")
-        print(choices.shape)
-        print(outcome.shape)
-        print(blocktype.shape)
-        print(day.shape)
-        print(trial.shape)
-        # print(Q.shape)
-        print(pppchoice.shape)
-        print(ppchoice.shape)
-        print(pchoice.shape)
-        print(seq_counter.shape)
-        # print(rep.shape)
-        # print(V.shape)
-        
         '''
-        Is called after a dual-target choice and updates Q-values, sequence
-        counters, habit values (i.e. repetition values), and V-Values.
+        Is called after a dual-target choice and after a single-target choice.
+        Updates Q-values, sequence counters, habit values (i.e. repetition values), and V-Values.
 
-        choices : the single-target trial choices before the next dual-target
-        trial (<0 is error) (0-indexed)"
-
-            Parameters:
-                choices (shape [num_subjects]) : (-10, 0, 1, 2, or 3). The particiapnt's choice at the dual-target trial
-                                             -10 : error
-                outcome (0 or 1) : no reward (0) or reward (1)
-                blocktype : 's' (sequential blocks) or 'r' (random blocks)
-                            Important for updating of sequence counters.
+        
+        Parameters
+        ----------
+        choices : array, shape [num_agents]
+            The particiapnt's choice at the dual-target trial (0-indexed). -2 & -10 are errors.
+            -1 means new block trial
+            
+        outcome : array, shape [num_agents]
+            0/1 : no reward/ reward.
+            -1 means new block trial
+            
+        blocktype : array, shape [num_agents]
+            0/1 : sequential/ random 
+            
+        day : array, shape [1]
+            Identical across participants.
+            
+        trial : array, shape [num_agents]
+            The observed trial depends on the experimental group and is not identical across participants.
+            
+        Q : list, containing array, shape [num_particles, num_agents, 4]
+            The Q-values.
+            
+        pppchoice : array, shape [num_agents]
+            DESCRIPTION.
+            
+        ppchoice : array, shape [num_agents]
+            DESCRIPTION.
+            
+        pchoice : array, shape [num_agents]
+            DESCRIPTION.
+            
+        seq_counter : array, shape [2, 6, 6, 6, 6, num_agents]
+            Dimension 0: 0/1 sequential/ random condition
+            Dimensions 1-4: (-2, -1, 0, 1, 2, 3), -2 error, -1 new block trial, 0-3 response digits
+            Dimension 5: agent
+            
+        rep : list, containing array, shape [num_particles, num_agents, 4]
+            rep[-1] is array with the repetition (i.e. habit) values.
+            
+        V : list, containing array, shape [num_particles, num_agents, 4]
+            V[-1] is array containing the action values for the next trial
 
         '''
+        # print("Printing at beginning of update()")
+        # print(choices.shape)
+        # print(outcome.shape)
+        # print(blocktype.shape)
+        # print(day.shape)
+        # print(trial.shape)
+        # print(Q[-1].shape)
+        # print(pppchoice.shape)
+        # print(ppchoice.shape)
+        # print(pchoice.shape)
+        # print("seqcounter")
+        # print(seq_counter.shape)
+        # print(rep[-1].shape)
+        # print(V[-1].shape)
         
         lr = self.lr_day1 * (day == 1) + \
             self.lr_day2 * (day == 2)
@@ -426,10 +450,6 @@ class Vbm_B(Vbm):
 
         "--- Group!!! ----"
         "mask contains 1s where Qoutcomp() contains non-zero entries"
-        print("outcome shape in update()")
-        print(outcome.shape)
-        print("Choices shape in update():")
-        print(choices.shape)
         Qout, mask = self.Qoutcomp(Q[-1], choices)
         Qnew = Q[-1] + lr[..., None] * \
             (outcome[None, ..., None]-Qout)*mask
@@ -482,9 +502,6 @@ class Vbm_B(Vbm):
 
         "----- Compute new V-values for next trial -----"
         V = self.update_V(day=day[0], rep=rep, Q=Q)
-        
-        # print("V shape:")
-        # print(V[-1].shape)
 
         "----- Update action memory -----"
         # pchoice stands for "previous choice"
@@ -612,9 +629,9 @@ def simulation(num_agents=100, key=None, **kwargs):
                      matfile_dir='./matlabcode/clipre/')
     key, *outties  = newenv.run(key=key)
     
-    out = newenv.envdata_to_df()
+    out_df = newenv.envdata_to_df()
         
-    return out, outties
+    return out_df, newenv.data
 
 def comp_groupdata(groupdata, for_ddm=1):
     """Trialsequence no jokers and RT are only important for DDM to determine the jokertype"""
