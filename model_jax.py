@@ -137,6 +137,7 @@ class Vbm():
             self.omega*self.Q[-1][..., 2]
         V3 = (1-self.omega)*self.rep[-1][..., 3] + \
             self.omega*self.Q[-1][..., 3]
+            
         self.V.append(jnp.stack((V0, V1, V2, V3), 2))
 
     def locs_to_pars(self, locs):
@@ -149,7 +150,7 @@ class Vbm():
 
         return par_dict
 
-    def compute_probs(self, trial, day):
+    def compute_probs(self, V, trial, day):
         option1, option2 = self.find_resp_options(trial)
 
         "Replace both response options with 1 for those participants who did not see a joker trial"
@@ -164,33 +165,36 @@ class Vbm():
         # option2 = jnp.asarray(
         #     [option2[ii] if option2[ii] > -1 else 1 for ii in range(len(option2))])
 
-        _, mask1 = self.Qoutcomp(self.V[-1], option1)
+        _, mask1 = self.Qoutcomp(V[-1], option1)
         # Vopt1 = (self.V[-1][jnp.where(mask1 == 1)]  # (particles, participants, 4)
         #          ).reshape(self.num_particles, self.num_agents)
-        _, mask2 = self.Qoutcomp(self.V[-1], option2)
+        _, mask2 = self.Qoutcomp(V[-1], option2)
         # Vopt2 = self.V[-1][jnp.where(mask2 == 1)
         #                    ].reshape(self.num_particles, self.num_agents)
         ind1_last = jnp.argsort(mask1, axis=-1)[:, :, -1].reshape(-1)
         ind_all = jnp.array(list(product(jnp.arange(self.num_particles),
                                          jnp.arange(self.num_agents))))
         ind2_last = jnp.argsort(mask2, axis=-1)[:, :, -1].reshape(-1)
-        Vopt1 = self.V[-1][ind_all[:, 0], ind_all[:, 1], ind1_last]
-        Vopt2 = self.V[-1][ind_all[:, 0], ind_all[:, 1], ind2_last]
+        Vopt1 = V[-1][ind_all[:, 0], ind_all[:, 1], ind1_last]
+        Vopt2 = V[-1][ind_all[:, 0], ind_all[:, 1], ind2_last]
         probs = self.softmax(jnp.stack((Vopt1, Vopt2), -1))
 
         return probs
 
     def Qoutcomp(self, Qin, choices):
-        """
-        Qin : torch.tensor() with shape [num_particles, num_agents, 4]
-        choices :   torch.tensor() with shape [num_agents]
+        '''
+        
+            Parameters:
+                Qin : torch.tensor() with shape [num_particles, num_agents, 4]
+                choices :   torch.tensor() with shape [num_agents]
 
-
-        Returns a tensor Qout with the same shape as Qin. 
-        Qout contains zeros everywhere except for the positions indicated by the choices of the participants. In this case the value of Qout is that of Qin.
-        Qout contains 0s for choices indicated by -10 (error choice for example), and will thus be ignored in Q-value updating.
-        """
-        # Qin = Qin.type(torch.double)
+            Returns:
+                Returns a tensor Qout with the same shape as Qin. 
+                Qout contains zeros everywhere except for the positions indicated 
+                by the choices of the participants. In this case the value of Qout is that of Qin.
+                Qout contains 0s for choices indicated by -10 (error choice for example), 
+                and will thus be ignored in Q-value updating.
+        '''
 
         if len(Qin.shape) == 2:
             Qin = Qin[None, ...]
@@ -263,7 +267,7 @@ class Vbm():
             (-self.bad_choice + option2_python) * cond
         return option1_python, option2_python
 
-    def choose_action(self, trial, day, key):
+    def choose_action(self, V, trial, day, key):
         "INPUT: trial (in 1-indexing (i.e. MATLAB notation))"
         "OUTPUT: choice response digit (in 0-indexing notation)"
         # assert trial > -1, "Sascha dumb"
@@ -273,16 +277,23 @@ class Vbm():
         cond_trial = trial < 10
         "Dual-target trial"
         option1, option2 = self.find_resp_options(trial)
-        probs = self.compute_probs(trial, day)
+        probs = self.compute_probs(V, trial, day)
+        # print("probs shape:")
+        # print(probs.shape)
         choice_sample = jran.uniform(key, shape=probs.shape[:2]) > probs[:, :, 0]
+        # print("choice_sample shape:")
+        # print(choice_sample.shape)
         _, key = jran.split(key)
         choice_python = option2 * choice_sample + \
             option1 * (1-choice_sample)
-        if_noerror = (trial - 1) * cond_trial + \
+        choice_if_noerror = (trial - 1) * cond_trial + \
             choice_python * (1 - cond_trial)
-        to_return = self.bad_choice * \
-            (1 - cond_error) + if_noerror * cond_error
-        return to_return, key
+        actual_choice = self.bad_choice * \
+            (1 - cond_error) + choice_if_noerror * cond_error
+            
+        # print("actual_choice shape:")
+        # print(actual_choice.shape)
+        return actual_choice, key
 
 
 class Vbm_B(Vbm):
@@ -299,23 +310,50 @@ class Vbm_B(Vbm):
 
         self.dectemp = jnp.asarray([[1.]])
         self.V = []
-        self.update_V(day=1)
+        self.update_V(day=1, rep=self.rep, Q=self.Q)
 
-    def update_V(self, **kwargs):
+    def update_V(self, day, rep, Q):
         "Model-specific function"
         "V(ai) = Θ_r*rep_val(ai) + Θ_Q*Q(ai)"
 
+        # print("====== update_V ======")
+        # print("rep shape:")
+        # print(rep[-1].shape)
+        # print("Q shape:")
+        # print(Q[-1].shape)
+        # print("self.theta_rep_day1 shape:")
+        # print(self.theta_rep_day1.shape)
+        # print("self.theta_rep_day2 shape:")
+        # print(self.theta_rep_day2.shape)
+        # print("day:")
+        # print(type(day))
+
         theta_rep = jnp.array([self.theta_rep_day1,
-                               self.theta_rep_day2])[1 * (kwargs['day'] == 2)]
-        theta_Q = jnp.array([self.theta_Q_day1, self.theta_Q_day2])[1 * (kwargs['day'] == 2)]
+                               self.theta_rep_day2])[1 * (day == 2)]
+        
+        theta_Q = jnp.array([self.theta_Q_day1, 
+                             self.theta_Q_day2])[1 * (day == 2)]
+        
+        # print("theta_rep shape:")
+        # print(theta_rep.shape)
+        
+        # print("theta_Q shape:")
+        # print(theta_Q.shape)
 
         # V-Values for actions (i.e. weighted action values)
-        V0 = theta_rep * self.rep[-1][..., 0] + theta_Q*self.Q[-1][..., 0]
-        V1 = theta_rep * self.rep[-1][..., 1] + theta_Q*self.Q[-1][..., 1]
-        V2 = theta_rep * self.rep[-1][..., 2] + theta_Q*self.Q[-1][..., 2]
-        V3 = theta_rep * self.rep[-1][..., 3] + theta_Q*self.Q[-1][..., 3]
+        V0 = theta_rep * rep[-1][..., 0] + theta_Q*Q[-1][..., 0]
+        V1 = theta_rep * rep[-1][..., 1] + theta_Q*Q[-1][..., 1]
+        V2 = theta_rep * rep[-1][..., 2] + theta_Q*Q[-1][..., 2]
+        V3 = theta_rep * rep[-1][..., 3] + theta_Q*Q[-1][..., 3]
 
+        V = [jnp.stack((V0, V1, V2, V3), 2)]
         self.V = [jnp.stack((V0, V1, V2, V3), 2)]
+        
+        # print("self.V[-1] shape:")
+        # print(self.V[-1].shape)
+        # print("====== ======")
+        
+        return V
 
     def locs_to_pars(self, locs):
         "Model-specific function"
@@ -332,37 +370,74 @@ class Vbm_B(Vbm):
 
         return par_dict
 
-    def update(self, choices, outcome, blocktype, trial, **kwargs):
-        """Is called after a dual-target choice and updates Q-values, sequence
+    def update(self, 
+               choices, 
+               outcome, 
+               blocktype, 
+               day, 
+               trial, 
+               Q, 
+               pppchoice, 
+               ppchoice, 
+               pchoice,
+               seq_counter,
+               rep,
+               V,
+               **kwargs):
+        
+        print("Printing all input shapes Babedibubedi")
+        print(choices.shape)
+        print(outcome.shape)
+        print(blocktype.shape)
+        print(day.shape)
+        print(trial.shape)
+        # print(Q.shape)
+        print(pppchoice.shape)
+        print(ppchoice.shape)
+        print(pchoice.shape)
+        print(seq_counter.shape)
+        # print(rep.shape)
+        # print(V.shape)
+        
+        '''
+        Is called after a dual-target choice and updates Q-values, sequence
         counters, habit values (i.e. repetition values), and V-Values.
 
-        choices : the single-target trial choices before the next dual-taregt
+        choices : the single-target trial choices before the next dual-target
         trial (<0 is error) (0-indexed)"
 
-        --- Parameters ---
-        choice (-10, 0, 1, 2, or 3): The particiapnt's choice at the dual-target trial
-                                     -10 : error
-        outcome (0 or 1) : no reward (0) or reward (1)
-        blocktype : 's' (sequential blocks) or 'r' (random blocks)
-                    Important for updating of sequence counters.
+            Parameters:
+                choices (shape [num_subjects]) : (-10, 0, 1, 2, or 3). The particiapnt's choice at the dual-target trial
+                                             -10 : error
+                outcome (0 or 1) : no reward (0) or reward (1)
+                blocktype : 's' (sequential blocks) or 'r' (random blocks)
+                            Important for updating of sequence counters.
 
-        """
-        lr = self.lr_day1 * (kwargs['day'] == 1) + \
-            self.lr_day2 * (kwargs['day'] == 2)
+        '''
+        
+        lr = self.lr_day1 * (day == 1) + \
+            self.lr_day2 * (day == 2)
             
-        self.pppchoice = (1 - (trial == -1)) * self.pppchoice - (trial == -1)
-        self.ppchoice = (1 - (trial == -1)) * self.ppchoice - (trial == -1)
-        self.pchoice = (1 - (trial == -1)) * self.pchoice - (trial == -1)
+        pppchoice = (1 - (trial == -1)) * pppchoice - (trial == -1)
+        ppchoice = (1 - (trial == -1)) * ppchoice - (trial == -1)
+        pchoice = (1 - (trial == -1)) * pchoice - (trial == -1)
         "----- Update GD-values -----"
         # Outcome is either 0 or 1
 
         "--- Group!!! ----"
         "mask contains 1s where Qoutcomp() contains non-zero entries"
-        Qout, mask = self.Qoutcomp(self.Q[-1], choices)
-        Qnew = self.Q[-1] + lr[..., None] * \
+        print("outcome shape in update()")
+        print(outcome.shape)
+        print("Choices shape in update():")
+        print(choices.shape)
+        Qout, mask = self.Qoutcomp(Q[-1], choices)
+        Qnew = Q[-1] + lr[..., None] * \
             (outcome[None, ..., None]-Qout)*mask
-
-        self.Q = [Qnew * (trial[0] != -1) + self.Q[-1] * (trial[0] == -1)]
+        
+        # Qnew = self.Q[-1]*2
+        # Q = [Qnew]
+        
+        Q = [Qnew * (trial[0] != -1) + Q[-1] * (trial[0] == -1)]
         "--- The following is executed in case of correct and incorrect responses ---"
         "----- Update sequence counters and repetition values of self.rep -----"
         repnew = []
@@ -371,71 +446,79 @@ class Vbm_B(Vbm):
 
             "Sequential Block"
             " Update counter "
-            old_seq_counter = self.seq_counter[blocktype[agent],
-                                               self.pppchoice[agent],
-                                               self.ppchoice[agent],
-                                               self.pchoice[agent],
+            old_seq_counter = seq_counter[blocktype[agent],
+                                               pppchoice[agent],
+                                               ppchoice[agent],
+                                               pchoice[agent],
                                                choices[agent], agent]
-            self.seq_counter = self.seq_counter.at[blocktype[agent],
-                                                   self.pppchoice[agent],
-                                                   self.ppchoice[agent],
-                                                   self.pchoice[agent],
+            seq_counter = seq_counter.at[blocktype[agent],
+                                                   pppchoice[agent],
+                                                   ppchoice[agent],
+                                                   pchoice[agent],
                                                    choices[agent], agent].set(old_seq_counter + 1)
 
             " Update rep values "
-            index = (blocktype[agent], self.ppchoice[agent],
-                     self.pchoice[agent], choices[agent])
+            index = (blocktype[agent], 
+                     ppchoice[agent],
+                     pchoice[agent], 
+                     choices[agent])
+            
             for aa in range(4):
-                new_row[aa] = self.seq_counter[index + (aa, agent)] / \
-                    (self.seq_counter[index + (0, agent)] +
-                     self.seq_counter[index + (1, agent)] +
-                     self.seq_counter[index + (2, agent)] +
-                     self.seq_counter[index + (3, agent)])
+                new_row[aa] = seq_counter[index + (aa, agent)] / \
+                    (seq_counter[index + (0, agent)] +
+                     seq_counter[index + (1, agent)] +
+                     seq_counter[index + (2, agent)] +
+                     seq_counter[index + (3, agent)])
 
             repnew.append(new_row)
         jrepnew = jnp.asarray(repnew)
         new_rep = jnp.broadcast_to(jrepnew[None, ...],
                                    (self.num_particles,
                                     self.num_agents, 4))
-        self.rep = [new_rep * (trial[None, :, None] != -1) +
+        rep = [new_rep * (trial[None, :, None] != -1) +
                     jnp.ones((self.num_particles,
                               self.num_agents,
                               self.na))/self.na * (trial[None, :, None] == -1)]
 
         "----- Compute new V-values for next trial -----"
-        self.update_V(day=kwargs["day"])
+        V = self.update_V(day=day[0], rep=rep, Q=Q)
+        
+        # print("V shape:")
+        # print(V[-1].shape)
 
         "----- Update action memory -----"
         # pchoice stands for "previous choice"
-        self.pppchoice = self.ppchoice * (trial != -1) - (trial == -1)
-        self.ppchoice = self.pchoice * (trial != -1) - (trial == -1)
-        self.pchoice = choices * (trial != -1) - (trial == -1)
+        pppchoice = ppchoice * (trial != -1) - (trial == -1)
+        ppchoice = pchoice * (trial != -1) - (trial == -1)
+        pchoice = choices * (trial != -1) - (trial == -1)
+        
+        return Q, pppchoice, ppchoice, pchoice, seq_counter, rep, V
 
-    def reset(self, locs):
-        "Model-specific function (due to input to update_V)"
-        par_dict = self.locs_to_pars(locs)
+    # def reset(self, locs):
+    #     "Model-specific function (due to input to update_V)"
+    #     par_dict = self.locs_to_pars(locs)
 
-        self.num_particles = locs.shape[0]
-        self.num_agents = locs.shape[1]
+    #     self.num_particles = locs.shape[0]
+    #     self.num_agents = locs.shape[1]
 
-        "Latent Variables"
-        for key, value in par_dict.items():
-            delattr(self, key)
-            setattr(self, key, value)
+    #     "Latent Variables"
+    #     for key, value in par_dict.items():
+    #         delattr(self, key)
+    #         setattr(self, key, value)
 
-        "Q and rep"
-        self.Q = [self.Q_init.broadcast_to(
-            self.num_particles, self.num_agents, self.na)]  # Goal-Directed Q-Values
-        # habitual values (repetition values)
-        self.rep = [
-            jnp.ones(self.num_particles, self.num_agents, self.na)/self.na]
+    #     "Q and rep"
+    #     self.Q = [self.Q_init.broadcast_to(
+    #         self.num_particles, self.num_agents, self.na)]  # Goal-Directed Q-Values
+    #     # habitual values (repetition values)
+    #     self.rep = [
+    #         jnp.ones(self.num_particles, self.num_agents, self.na)/self.na]
 
-        "Compute V"
-        self.V = []
-        self.update_V(day=1)
+    #     "Compute V"
+    #     self.V = []
+    #     self.update_V(day=1)
 
-        "Sequence Counters"
-        self.seq_counter = self.init_seq_counter.copy()
+    #     "Sequence Counters"
+    #     self.seq_counter = self.init_seq_counter.copy()
 
 def simulation(num_agents=100, key=None, **kwargs):
     '''
@@ -527,11 +610,11 @@ def simulation(num_agents=100, key=None, **kwargs):
     
     newenv = env.Env(agent, rewprobs=[0.8, 0.2, 0.2, 0.8],
                      matfile_dir='./matlabcode/clipre/')
-    key = newenv.run(key=key)
+    key, *outties  = newenv.run(key=key)
     
     out = newenv.envdata_to_df()
         
-    return out
+    return out, outties
 
 def comp_groupdata(groupdata, for_ddm=1):
     """Trialsequence no jokers and RT are only important for DDM to determine the jokertype"""
@@ -585,6 +668,17 @@ def comp_groupdata(groupdata, for_ddm=1):
     return newgroupdata
 
 def repeat_interleave(x, num):
+    '''
+    Parameters
+    ----------
+    x : jnp array
+        range from 1 to num_agents
+    num : int
+        Number of particles
+
+
+    '''
+    
     return jnp.hstack([x[:, None]] * num).reshape(-1)
 
 def plot_simulated(sim_df):
@@ -602,5 +696,9 @@ def plot_simulated(sim_df):
     
     new_df = pd.DataFrame(average)
     fig,ax = plt.subplots()
-    sns.lineplot(data=new_df, x="blockidx", y="GDchoice", hue="jokertypes")
+    ax1 = sns.lineplot(data=new_df, x="blockidx", y="GDchoice", hue="jokertypes")
+    # lines = ax1.get_lines()
+    # ipdb.set_trace()
+    # min_y = np.min([line.get_ydata().min() for line in lines])
+    # plt.plot([5.5, 5.5], [0.6, 1], color = 'k')
     plt.show()

@@ -8,6 +8,7 @@ Created on Fri May 19 10:16:01 2023
 
 import pandas as pd
 
+import ipdb
 from jax import random as jran
 from jax import numpy as jnp
 from jax import lax
@@ -157,20 +158,39 @@ class Env():
         num_agents = self.agent.num_agents
         # The index of the block in the current experiment
 
-        def one_trial(key, matrices):
+        def one_trial(carry, matrices):
             "Simulates choices in dual-target trials"
             "matrices is [days, trials.T, lin_blocktype.T]"
             day, trial, blocktype = matrices
-            current_choice, key = self.agent.choose_action(trial, day, key)
+            key, Q, pppchoice, ppchoice, pchoice, seq_counter, rep, V = carry
+            current_choice, key = self.agent.choose_action(V, trial, day, key)
             outcome = jran.bernoulli(key, self.rewprobs[current_choice % 4])
+            # print("current_choice shape:")
+            # print(current_choice.shape)
+            # print("outcome shape is:")
+            # print(outcome.shape)
             current_choice = current_choice[0, ...]
             outcome = outcome[0, ...]
             _, key = jran.split(key)
-            self.agent.update(jnp.asarray(current_choice),
-                              jnp.asarray(outcome), blocktype,
-                              day=day, trial=trial)
-            outtie = [current_choice, outcome]
-            return key, outtie
+            Q, pppchoice, ppchoice, pchoice, seq_counter, rep, V = \
+                self.agent.update(jnp.asarray(current_choice),
+                              jnp.asarray(outcome), 
+                              blocktype,
+                              day=day,
+                              trial=trial,
+                              Q = Q,
+                              pppchoice = pppchoice, 
+                              ppchoice = ppchoice, 
+                              pchoice = pchoice,
+                              seq_counter = seq_counter,
+                              rep =rep,
+                              V = V)
+            
+            # print("Q Shape")
+            # print(self.agent.Q[-1].shape)
+            outtie = [current_choice, outcome, Q]
+            carry = [key, Q, pppchoice, ppchoice, pchoice, seq_counter, rep, V]
+            return carry, outtie
         
         days = (np.array(self.data['blockidx']) > 5) + 1
         trials = np.squeeze(self.data["trialsequence"])
@@ -180,12 +200,20 @@ class Env():
                                    num_agents, axis=0)
         trials = jnp.repeat(trials[None, ...], num_agents, axis=0)
         matrices = [days, trials.T, lin_blocktype.T]
-        key, outties = lax.scan(one_trial, key, matrices)
-        choices, outcomes = outties
+        carry = [key, 
+                 self.agent.Q, 
+                 self.agent.pppchoice,
+                 self.agent.ppchoice,
+                 self.agent.pchoice,
+                 self.agent.seq_counter,
+                 self.agent.rep,
+                 self.agent.V]
+        carry, outties = lax.scan(one_trial, carry, matrices)
+        choices, outcomes, Qs = outties
         self.data["choices"] = choices
         self.data["outcomes"] = outcomes
         
-        return key
+        return carry, choices, outcomes, Qs
 
     def one_session(self, choices, outcomes, trials, blocktype, num_parts, key=None):
         """

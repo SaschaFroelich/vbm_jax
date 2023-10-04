@@ -13,9 +13,13 @@ def define_model(exp_data):
     theta_q = numpyro.sample('theta_q', dist.HalfNormal(5).expand(2))
     theta_r = numpyro.sample('theta_q', dist.HalfNormal(5).expand(2))
 
-    agent = mj.Vbm_B(lr_day1=lrs[0], lr_day2=lrs[1], theta_Q_day1=theta_q[0],
-                     theta_Q_day2=theta_q[1], theta_rep_day1=theta_r[0],
-                     theta_rep_day2=theta_r[1], k=4.0,
+    agent = mj.Vbm_B(lr_day1=lrs[0], 
+                     lr_day2=lrs[1], 
+                     theta_Q_day1=theta_q[0],
+                     theta_Q_day2=theta_q[1], 
+                     theta_rep_day1=theta_r[0],
+                     theta_rep_day2=theta_r[1], 
+                     k=4.0,
                      Q_init=[[[0.2, 0, 0, 0.2]]])
 
     probs = one_session(agent, exp_data)
@@ -50,12 +54,19 @@ def one_session(agent, exp_data, num_parts):
     key, probs = lax.scan(one_trial, dummy, matrices)
     return probs
 
+#%%
 num_chains = 8
-num_samples = 1_000_000
+num_samples = 1_000
+
+exp_data = mj.simulation(num_agents = 2)
 
 kernel = NUTS(define_model, dense_mass=True)
-mcmc = MCMC(kernel, num_warmup=500, num_samples=num_samples,
-            num_chains=num_chains, progress_bar=num_chains == 1)
+mcmc = MCMC(kernel, 
+            num_warmup=500, 
+            num_samples=num_samples,
+            num_chains=num_chains, 
+            progress_bar=num_chains == 1)
+
 rng_key = random.PRNGKey(1)
 mcmc.run(rng_key, exp_data=exp_data)
 mcmc.print_summary()
