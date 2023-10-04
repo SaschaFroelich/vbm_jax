@@ -50,7 +50,6 @@ def one_session(agent, exp_data, num_parts):
     key, probs = lax.scan(one_trial, dummy, matrices)
     return probs
 
-
 num_chains = 8
 num_samples = 1_000_000
 

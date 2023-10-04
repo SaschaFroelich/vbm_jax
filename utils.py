@@ -18,10 +18,8 @@ import models_torch as models
 from statistics import mean, stdev
 from math import sqrt
 
-
-def get_participant_data(file_day1, group, data_dir, remote=0, published_results=0):
+def get_participant_data(file_day1, group, data_dir, published_results=0):
     "Get data of an individual participant"
-    "remote argument is for different directories of experiment sequences --> Could do without since they are now stored in the mat-files"
     assert (group < 4)
     "RETURN: data (dict) used for inference"
 
@@ -120,7 +118,7 @@ def get_participant_data(file_day1, group, data_dir, remote=0, published_results
         blockidx.append(block)
 
         seq, btype, seq_wo_jokers = get_trialseq(
-            group, block, remote, published_results=published_results)
+            group, block, published_results=published_results)
 
         trialsequence.extend(seq)
         trialsequence_wo_jokers.extend(seq_wo_jokers)
@@ -152,9 +150,11 @@ def get_participant_data(file_day1, group, data_dir, remote=0, published_results
     return data, ID
 
 
-def get_trialseq(group, block_no, remote=0, published_results=0):
-    "NB: in mat-files, the block order was already swapped, as if all
-    participants saw the first group's block order! Have to correct for this!"
+def get_trialseq(group, block_no, published_results=0):
+    '''
+    NB: in mat-files, the block order was already swapped, as if all
+    participants saw the first group's block order! Have to correct for this!
+    '''
 
     "This is the blockorder participants actually saw"
     blockorder = [["random1", "trainblock1", "random2", "trainblock2",
@@ -178,23 +178,13 @@ def get_trialseq(group, block_no, remote=0, published_results=0):
 
     if published_results:
         "Published"
-        if remote == 0:
             mat = scipy.io.loadmat(
-                "/home/sascha/1TB/TRR/AST_repo/matlabcode/published/%s.mat" % blockorder[group][block_no])
-
-        elif remote == 1:
-            mat = scipy.io.loadmat(
-                "/home/sascha/Desktop/vb_model/torch/matlabcode/published/%s.mat" % blockorder[group][block_no])
+                "/home/sascha/Desktop/vb_model/vbm_torch/matlabcode/published/%s.mat" % blockorder[group][block_no])
 
     else:
         "Clipre"
-        if remote == 0:
             mat = scipy.io.loadmat(
-                "/home/sascha/1TB/TRR/AST_repo/matlabcode/clipre/%s.mat" % blockorder[group][block_no])
-
-        elif remote == 1:
-            mat = scipy.io.loadmat(
-                "/home/sascha/Desktop/vb_model/torch/matlabcode/clipre/%s.mat" % blockorder[group][block_no])
+                "/home/sascha/Desktop/vb_model/vbm_torch/matlabcode/clipre/%s.mat" % blockorder[group][block_no])
 
     types = [["r", "s", "r", "s", "r", "s", "s", "r", "s", "r", "s", "r", "s", "r"],
              ["s", "r", "s", "r", "s", "r", "r", "s", "r", "s", "r", "s", "r", "s"],

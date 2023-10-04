@@ -9,7 +9,7 @@ Created on Mon Oct  2 13:13:46 2023
 import model_jax as mj
 from jax import numpy as jnp
 
-num_agents = 30
+num_agents = 1
 
 theta_rep_day1 = 0.8
 theta_rep_day2 = 0.8

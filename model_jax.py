@@ -349,6 +349,7 @@ class Vbm_B(Vbm):
         """
         lr = self.lr_day1 * (kwargs['day'] == 1) + \
             self.lr_day2 * (kwargs['day'] == 2)
+            
         self.pppchoice = (1 - (trial == -1)) * self.pppchoice - (trial == -1)
         self.ppchoice = (1 - (trial == -1)) * self.ppchoice - (trial == -1)
         self.pchoice = (1 - (trial == -1)) * self.pchoice - (trial == -1)
