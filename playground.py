@@ -6,6 +6,8 @@ Created on Mon Oct  2 13:13:46 2023
 @author: sascha
 """
 
+"Simulate behaviour"
+
 import model_jax as mj
 from jax import numpy as jnp
 
@@ -114,7 +116,6 @@ Qout, mask = Qoutcomp(Qin, choices)
 
 
 #%%
-
 import numpy as np
 from jax import random as jran
 

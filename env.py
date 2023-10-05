@@ -212,52 +212,20 @@ class Env():
                  self.agent.seq_counter,
                  self.agent.rep,
                  self.agent.V]
+        
         carry, outties = lax.scan(one_trial, carry, matrices)
         choices, outcomes, Qs = outties
         self.data["choices"] = choices
         self.data["outcomes"] = outcomes
         
+        "Add binary choice data (0/1: first/second response option chosen, -1: no dual-target trial)"
+        print("Test this for multiple agents")
+        # option0 = self.agent.find_resp_options(self.data["trialsequence"])[0]
+        option1 = self.agent.find_resp_options(self.data["trialsequence"])[1]
+        
+        self.data["bin_choices"] = ((option1 == self.data['choices']) * (self.data['choices'] > -1)).astype(int)
+        
         return carry, choices, outcomes, Qs
-
-    # def one_session(self, choices, outcomes, trials, blocktype, num_parts, key=None):
-    #     """
-    #     Should simulate choices if no choices are given, and compute probs if choices are given.
-        
-    #     Parameters
-    #     ----------
-
-    #     block_order : 1 or 2
-    #         Which block order to use (in case of Context =="all")
-
-    #     """
-    #     self.prepare_sims()
-
-    #     num_agents = num_parts
-    #     # The index of the block in the current experiment
-
-    #     def one_trial(key, matrices):
-    #         "Computes response probabilities for dual-target trials"
-    #         "matrices is [days, trials.T, lin_blocktype.T, choices, outcomes]"
-    #         day, trial, blocktype, current_choice, outcome = matrices
-    #         probs = self.agent.compute_probs(V, trial)
-    #         _, key = jran.split(key)
-    #         self.agent.update(jnp.asarray(current_choice),
-    #                           jnp.asarray(outcome), blocktype,
-    #                           day=day, trial=trial)
-    #         outtie = [probs]
-    #         return key, outtie
-        
-    #     days = (np.array(self.data['blockidx']) > 5) + 1
-    #     trials = np.squeeze(self.data["trialsequence"])
-    #     lin_blocktype = jnp.hstack([-jnp.ones((14, 1), dtype=int),
-    #                                 blocktype.astype(int)])
-    #     lin_blocktype = jnp.repeat(lin_blocktype.reshape(-1)[None, ...],
-    #                                num_agents, axis=0)
-    #     trials = jnp.repeat(trials[None, ...], num_agents, axis=0)
-    #     matrices = [days, trials.T, lin_blocktype.T, choices, outcomes]
-    #     key, probs = lax.scan(one_trial, key, matrices)
-    #     return probs
-
 
     def envdata_to_df(self):
         
@@ -303,7 +271,7 @@ class Env():
                                           np.max(self.rewprobs), axis = 1).astype(int)
         
         end = time.time()
-        print("Executed in %.2f seconds"%(end-start))
+        print("Executed envdata_to_df() in %.2f seconds"%(end-start))
         
         return sim_df
     

@@ -12,42 +12,6 @@ from jax import random as jran
 import jax
 
 import env
-# import models_torch as models
-
-# def for_inference():
-#     def one_trial(t, matrices):
-#         trial, day, blocktype, choice, outcome = matrices
-#         if trial == -1:
-#             agent.update(-1, -1, -1, day=day, trialstimulus=trial)
-#         else:
-#             if trial > 10:
-#                 t += 1
-#                 probs = agent.compute_probs(trial, day)
-#             else:
-#                 probs = jnp.asarray((0, 0))
-#             agent.update(choice, outcome, blocktype, day=day,
-#                          trialstimulus=trial, t=t)
-#         return t, probs
-
-#     trials = data['Trialsequences']
-#     blockidx = data['Blockidx']
-#     day = blockidx > 5
-#     blocktype = data['Blocktype']
-#     choices = data['Choices']
-#     outcomes = data['Outcomes']
-
-#     agent = models.Vbm_B()
-#     # masks = choices != -10
-#     choices_bin = np.zeros_like(trials)
-#     for idx, (trial, choice) in enumerate(zip(trials, choices)):
-#         options = agent.find_resp_options(trial)
-#         choices_bin[idx] = choice != options[0]
-
-#     carry = -1
-#     matrices = [trials, day, blocktype, choices, outcomes]
-
-#     carry_final, out = lax.scan(one_trial, carry, matrices)
-
 
 class Vbm():
     "parameters: omega, dectemp, lr"
@@ -511,31 +475,6 @@ class Vbm_B(Vbm):
         
         return Q, pppchoice, ppchoice, pchoice, seq_counter, rep, V
 
-    # def reset(self, locs):
-    #     "Model-specific function (due to input to update_V)"
-    #     par_dict = self.locs_to_pars(locs)
-
-    #     self.num_particles = locs.shape[0]
-    #     self.num_agents = locs.shape[1]
-
-    #     "Latent Variables"
-    #     for key, value in par_dict.items():
-    #         delattr(self, key)
-    #         setattr(self, key, value)
-
-    #     "Q and rep"
-    #     self.Q = [self.Q_init.broadcast_to(
-    #         self.num_particles, self.num_agents, self.na)]  # Goal-Directed Q-Values
-    #     # habitual values (repetition values)
-    #     self.rep = [
-    #         jnp.ones(self.num_particles, self.num_agents, self.na)/self.na]
-
-    #     "Compute V"
-    #     self.V = []
-    #     self.update_V(day=1)
-
-    #     "Sequence Counters"
-    #     self.seq_counter = self.init_seq_counter.copy()
 
 def simulation(num_agents=100, key=None, **kwargs):
     '''
