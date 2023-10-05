@@ -30,7 +30,7 @@ class Vbm():
         self.num_blocks = 14
         self.trials = 480*self.num_blocks
         self.na = 4  # no. of possible actions
-        self.errorrate = 0.01
+        self.errorrate = 0.1
 
         self.num_particles = Q_init.shape[0]
         self.num_agents = Q_init.shape[1]
@@ -272,7 +272,6 @@ class Vbm():
             
         return actual_choice, key
 
-
 class Vbm_B(Vbm):
     "parameters: lr_day1, theta_Q_day1, theta_rep_day1, lr_day2, theta_Q_day2, theta_rep_day2"
 
@@ -280,8 +279,13 @@ class Vbm_B(Vbm):
         "Model-specific init function"
         "Compute action values V"
 
-        self.param_names = ["lr_day1", "theta_Q_day1",
-                            "theta_rep_day1", "lr_day2", "theta_Q_day2", "theta_rep_day2"]
+        self.param_names = ["lr_day1", 
+                            "theta_Q_day1",
+                            "theta_rep_day1", 
+                            "lr_day2", 
+                            "theta_Q_day2", 
+                            "theta_rep_day2"]
+        
         for par in self.param_names:
             assert (par in kwargs)
 
@@ -550,9 +554,14 @@ def simulation(num_agents=100, key=None, **kwargs):
         lr_day2_true.append(lr_day2)
         theta_Q_day2_true.append(theta_Q_day2)
         theta_rep_day2_true.append(theta_rep_day2)
+        
+        sequence = np.random.randint(1, 3, size=num_agents).tolist()
+        blockorder_cond = np.random.randint(1, 3, size=num_agents).tolist()
 
-    Q_init = jnp.repeat(jnp.asarray([[[0.2, 0., 0., 0.2]]]), num_agents,
+    Q_init = jnp.repeat(jnp.asarray([[[0.2, 0., 0., 0.2]]]), 
+                        num_agents,
                         axis=1)
+    
     Q_init_group.append(Q_init)
 
     agent = Vbm_B(lr_day1=jnp.asarray(lr_day1),
@@ -564,8 +573,12 @@ def simulation(num_agents=100, key=None, **kwargs):
                   k=k,
                   Q_init=jnp.asarray(Q_init))
     
-    newenv = env.Env(agent, rewprobs=[0.8, 0.2, 0.2, 0.8],
+    newenv = env.Env(agent, 
+                     rewprobs=[0.8, 0.2, 0.2, 0.8],
+                     sequence = sequence,
+                     blockorder = blockorder_cond,
                      matfile_dir='./matlabcode/clipre/')
+    
     key, *outties  = newenv.run(key=key)
     
     out_df = newenv.envdata_to_df()

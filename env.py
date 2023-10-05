@@ -18,21 +18,69 @@ import numpy as np
 
 class Env():
 
-    def __init__(self, agent, rewprobs, matfile_dir, sequence=1):
-        """sequence : 1 or 2
-            2 means mirror sequence
-        """
+    def __init__(self, agent, rewprobs, sequence, blockorder, matfile_dir):
+        '''
+
+        Parameters
+        ----------
+        agent : TYPE
+            DESCRIPTION.
+        rewprobs : TYPE
+            DESCRIPTION.
+        sequence : list, optional
+            list of length num_agents describing the stimulus sequences for the different agents. The default is 1.
+            1/2 : default sequence/ mirror sequence
+        matfile_dir : TYPE
+            DESCRIPTION.
+        Returns
+        -------
+        None.
+
+        '''
+        
+
+        assert(isinstance(sequence, list))
+        assert(len(sequence) == agent.num_agents)
+
         self.sequence = sequence
+        self.blockorder = blockorder
         self.agent = agent
         self.rewprobs = jnp.asarray(rewprobs)
         self.matfile_dir = matfile_dir
 
-        self.blocktype = self.define_blocktype()
+        self.blocktype = self.define_blocktype(blockorder)
 
     def load_matfiles(self, matfile_dir, blocknr, blocktype, sequence=1):
-        "blocknr : num. of block of given type (not same as Blockidx in experiment)"
-        "sequence : 1 or 2 (2 means mirror sequence)"
+        '''
+        Parameters
+        ----------
+        matfile_dir : TYPE
+            DESCRIPTION.
+        blocknr : int
+            Number of block of given type (not same as Blockidx in experiment)
+        blocktype : TYPE
+            DESCRIPTION.
+        sequence : list, optional
+            list of length num_agents describing the stimulus sequences for the different agents. The default is 1.
+            1/2 : default sequence/ mirror sequence
 
+        Raises
+        ------
+        Exception
+            DESCRIPTION.
+
+        Returns
+        -------
+        list
+            DESCRPITION.
+        list
+            DESCRIPTION.
+        jokertypes : list
+            DESCRIPTION.
+
+        '''
+        
+        
         if sequence == 2:
             prefix = "mirror_"
         else:
@@ -86,30 +134,51 @@ class Env():
             np.squeeze(seq_no_jokers).tolist(), \
             jokertypes
     
-    def define_blocktype(self, block_order=1):
-        num_blocks = 14
-        tb_idxs = [1, 3, 5, 6, 8, 10, 12]  # tb idxs for block_order == 1
-        # random idxs for block_order == 1
-        rand_idxs = [0, 2, 4, 7, 9, 11, 13]
+    def define_blocktype(self, blockorder):
+        '''
+        Parameters
+        ----------
+        blockorder : list
+            DESCRIPTION.
 
-        blocktype = np.ones((num_blocks, 480))*-1
+        Returns
+        -------
+        blocktype : list of arrays
+            DESCRIPTION.
 
-        dumb = np.array([[0, 1], [1, 0]][block_order - 1])
-
-        # fixed sequence condition
-        blocktype[tb_idxs[0:num_blocks//2], :] = dumb[0]
-        # random condition
-        blocktype[rand_idxs[0:num_blocks//2], :] = dumb[1]
-
+        '''
+        
+        assert(self.agent.num_agents == len(blockorder))
+        
+        blocktype = []
+        
+        for ag in range(self.agent.num_agents):
+            
+            num_blocks = 14
+            tb_idxs = [1, 3, 5, 6, 8, 10, 12]  # tb idxs for block_order == 1
+            # random idxs for block_order == 1
+            rand_idxs = [0, 2, 4, 7, 9, 11, 13]
+    
+            blocktype_temp = np.ones((num_blocks, 480))*-1
+    
+            dumb = np.array([[0, 1], [1, 0]][blockorder[ag] - 1])
+    
+            # fixed sequence condition
+            blocktype_temp[tb_idxs[0:num_blocks//2], :] = dumb[0]
+            # random condition
+            blocktype_temp[rand_idxs[0:num_blocks//2], :] = dumb[1]
+            
+            blocktype.append(blocktype_temp.astype(int).copy())
+        
         return blocktype
 
-    def prepare_sims(self, ):
+    def prepare_sims(self):
         "Manipulates self.data for simulations"
-        sequence = self.sequence
-        blocktype = self.blocktype
+        sequence = self.sequence # list of ints
+        blocktype = self.blocktype # list of arrays
         num_blocks = 14
-        tb_block = 0
-        random_block = 0
+        tb_block = [0]*self.agent.num_agents
+        random_block = [0]*self.agent.num_agents
         self.data = {"trialsequence": [],
                      "jokertypes": [], 
                      "blockidx": [],
@@ -117,37 +186,53 @@ class Env():
         
         for block in range(num_blocks):
             "New block!"
-            self.data["trialsequence"].append([-1])
-            self.data["jokertypes"].append([-1])
-            self.data["blockidx"].append([-1])
-            self.data["blocktype"].append([-1])
-            # The index of the block in the current experiment
+            self.data["trialsequence"].append([-1]*self.agent.num_agents)
+            self.data["jokertypes"].append([-1]*self.agent.num_agents)
+            self.data["blockidx"].append([-1]*self.agent.num_agents)
+            self.data["blocktype"].append([-1]*self.agent.num_agents)
+            # dfgh
+            self.data["blocktype"].extend([[blocktype[i][block, 0] for i in range(self.agent.num_agents)] for _ in range(480)])
+            self.data["blockidx"].extend([[block]*self.agent.num_agents]*480)
+            
+            current_idx = len(self.data["trialsequence"])
+            self.data["trialsequence"].extend(np.zeros((480, self.agent.num_agents), dtype=int).tolist())
+            self.data["jokertypes"].extend(np.zeros((480, self.agent.num_agents), dtype=int).tolist())
 
-            current_blocktype = blocktype[block, 0]
-
-            if current_blocktype == 0:
-                "Sequential block"
-                seq_matlab, seq_no_jokers_matlab, jokertypes = self.load_matfiles(
-                    self.matfile_dir, tb_block, current_blocktype, sequence=sequence)
-                tb_block += 1
-
-                self.data["blocktype"].extend([[0]]*480)
-
-            elif current_blocktype == 1:
-                "Random block"
-                seq_matlab, seq_no_jokers_matlab, jokertypes = self.load_matfiles(
-                    self.matfile_dir, random_block, current_blocktype, sequence=sequence)
-                random_block += 1
+            for ag in range(self.agent.num_agents):
+                current_blocktype = blocktype[ag][block, 0]
+    
+                if current_blocktype == 0:
+                    "Sequential block"
+                    seq_matlab, seq_no_jokers_matlab, jokertypes = self.load_matfiles(
+                                                                    self.matfile_dir, 
+                                                                    tb_block[ag], 
+                                                                    current_blocktype, 
+                                                                    sequence = sequence[ag])
+                    tb_block[ag] += 1
+    
+                    # self.data["blocktype"].extend([[0]]*480)
+    
+                elif current_blocktype == 1:
+                    "Random block"
+                    seq_matlab, seq_no_jokers_matlab, jokertypes = self.load_matfiles(
+                                                                    self.matfile_dir, 
+                                                                    random_block[ag], 
+                                                                    current_blocktype, 
+                                                                    sequence = sequence[ag])
+                    random_block[ag] += 1
+                    
+                    # self.data["blocktype"].extend([[1]]*480)
+    
+                else:
+                    raise Exception("Problem with los blocktypos.")
                 
-                self.data["blocktype"].extend([[1]]*480)
-
-            else:
-                raise Exception("Problem with los blocktypos.")
-
-            self.data["trialsequence"].extend([[s] for s in seq_matlab])
-            self.data["jokertypes"].extend([[j] for j in jokertypes])
-            self.data["blockidx"].extend([[block]]*480)
-
+                for i in range(480):
+                    # ipdb.set_trace()
+                    self.data["trialsequence"][current_idx + i][ag] = seq_matlab[i]
+                    self.data["jokertypes"][current_idx + i][ag] = jokertypes[i]
+                # self.data["trialsequence"].extend([[s] for s in seq_matlab])
+                # self.data["jokertypes"].extend([[j] for j in jokertypes])
+                # ipdb.set_trace()
     def run(self, key=None):
         """
         This method is used by simulation()
@@ -161,7 +246,7 @@ class Env():
         """
         self.prepare_sims()
 
-        blocktype = jnp.array(self.blocktype)
+        # blocktype = jnp.array(self.blocktype)
         num_agents = self.agent.num_agents
         # The index of the block in the current experiment
 
@@ -169,6 +254,10 @@ class Env():
             "Simulates choices in dual-target trials"
             "matrices is [days, trials.T, lin_blocktype.T]"
             day, trial, blocktype = matrices
+            print("Printing shapes")
+            print(day.shape)
+            print(trial.shape)
+            print(blocktype.shape)
             key, Q, pppchoice, ppchoice, pchoice, seq_counter, rep, V = carry
             # print("bliblibli")
             # print(type(trial))
@@ -198,12 +287,12 @@ class Env():
         
         days = (np.array(self.data['blockidx']) > 5) + 1
         trials = np.squeeze(self.data["trialsequence"])
-        lin_blocktype = jnp.hstack([-jnp.ones((14, 1), dtype=int),
-                                    blocktype.astype(int)])
-        lin_blocktype = jnp.repeat(lin_blocktype.reshape(-1)[None, ...],
-                                   num_agents, axis=0)
-        trials = jnp.repeat(trials[None, ...], num_agents, axis=0)
-        matrices = [days, trials.T, lin_blocktype.T]
+        blocktype = jnp.asarray(self.data["blocktype"])
+        
+        # lin_blocktype = jnp.hstack([-jnp.ones((14, 1), dtype=int), blocktype.astype(int)])
+        # lin_blocktype = jnp.repeat(lin_blocktype.reshape(-1)[None, ...], num_agents, axis=0)
+        # trials = jnp.repeat(trials[None, ...], num_agents, axis=0)
+        matrices = [days, trials, blocktype]
         carry = [key, 
                  self.agent.Q, 
                  self.agent.pppchoice,
@@ -212,7 +301,6 @@ class Env():
                  self.agent.seq_counter,
                  self.agent.rep,
                  self.agent.V]
-        
         carry, outties = lax.scan(one_trial, carry, matrices)
         choices, outcomes, Qs = outties
         self.data["choices"] = choices
@@ -223,7 +311,11 @@ class Env():
         # option0 = self.agent.find_resp_options(self.data["trialsequence"])[0]
         option1 = self.agent.find_resp_options(self.data["trialsequence"])[1]
         
+        "Fill with -1"
+        self.data["bin_choices"] = (-1* (self.data['choices'] > -20)).astype(int)
+        "Fill with 1s and 0s where option0 or option1 was chosen"
         self.data["bin_choices"] = ((option1 == self.data['choices']) * (self.data['choices'] > -1)).astype(int)
+        
         
         return carry, choices, outcomes, Qs
 

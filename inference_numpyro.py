@@ -1,3 +1,4 @@
+import utils
 import ipdb
 import numpyro
 from numpyro.infer import MCMC, NUTS, SA
@@ -117,24 +118,27 @@ def shorten_data(exp_data):
     return exp_data
 
 #%%
+
+num_agents = 2
+
 num_chains = 1
-num_samples = 10_000
+num_samples = 500
 
-_, exp_data = mj.simulation(num_agents = 1, 
-                            lr_day1 = jnp.array([[0.1]]),
-                            lr_day2 = jnp.array([[0.1]]),
-                            theta_Q_day1 = jnp.array([[2.]]),
-                            theta_Q_day2 = jnp.array([[2.]]),
-                            theta_rep_day1 = jnp.array([[3.]]),
-                            theta_rep_day2 = jnp.array([[3.]]))
+# _, exp_data = mj.simulation(num_agents = num_agents, 
+#                             lr_day1 = jnp.array([[0.1]]),
+#                             lr_day2 = jnp.array([[0.1]]),
+#                             theta_Q_day1 = jnp.array([[2.]]),
+#                             theta_Q_day2 = jnp.array([[2.]]),
+#                             theta_rep_day1 = jnp.array([[3.]]),
+#                             theta_rep_day2 = jnp.array([[3.]]))
 
-# exp_data = shorten_data(exp_data)
-
-num_removals = len([i for i in range(len(exp_data['choices'])) if exp_data['choices'][i] < 0])
+_, exp_data = mj.simulation(num_agents = num_agents)
 
 "Discard the new block trials and error trials (<0), as well as single-target trials (<10)"
 # not_observed_because_negative = jnp.unique(jnp.arange(len(exp_data['choices']))[jnp.squeeze(exp_data['choices'] < 0)])
-not_observed = jnp.unique(jnp.arange(len(exp_data['choices']))[jnp.squeeze(jnp.asarray(exp_data['trialsequence']) < 10)])
+# not_observed = jnp.unique(jnp.arange(len(exp_data['choices']))[jnp.squeeze(jnp.asarray(exp_data['trialsequence']) < 10)])
+not_observed = jnp.tile(jnp.arange(len(exp_data['choices'])), (num_agents,1)) * (jnp.squeeze(jnp.asarray(exp_data['trialsequence']) < 10).T)
+print("ALso remove the bad responses")
 
 kernel = NUTS(define_model, dense_mass=True)
 mcmc = MCMC(kernel, 
@@ -146,3 +150,8 @@ mcmc = MCMC(kernel,
 rng_key = random.PRNGKey(1)
 mcmc.run(rng_key, exp_data=exp_data, not_observed = not_observed)
 mcmc.print_summary()
+
+
+#%%
+
+group_data = utils.get_group_data()

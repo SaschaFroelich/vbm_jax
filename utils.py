@@ -13,12 +13,61 @@ import glob
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
-import models_torch as models
+import model_jax as models
 
 from statistics import mean, stdev
 from math import sqrt
+import numpy as np
 
-def get_participant_data(file_day1, group, data_dir, published_results=0):
+def get_group_data(published_results = 0):
+    '''
+    Gets experimental data of participants.
+
+    Parameters
+    -------
+    published_results : int
+        0/1 : fit unpublished/ published results
+
+    Returns
+    -------
+    newgroupdata : dict
+        Keys:
+           'trialsequence' : list of lists
+           'choices' : list of lists
+           'outcomes' : list of lists
+           'blocktype' : list of lists
+           'blockidx' : list of lists
+           'RT' : list of lists
+
+    '''
+    
+    if published_results:
+        data_dir = "/home/sascha/Desktop/vb_model/vbm_torch/behav_data/published/"
+        
+    else:
+        data_dir = "/home/sascha/Desktop/vb_model/vbm_torch/behav_data/"
+        
+    groupdata = []
+    
+    pb = -1
+    for group in range(4):
+        files_day1 = glob.glob(data_dir + "Grp%d/csv/*Tag1*.mat"%(group+1))
+        
+        for file1 in files_day1:
+            "Loop over participants"
+            pb += 1
+            data, _ = get_single_participant_data(file1, 
+                                                 group, 
+                                                 data_dir, 
+                                                 published_results = published_results)
+
+            groupdata.append(data)
+
+    newgroupdata = comp_groupdata(groupdata)
+    
+    return newgroupdata
+
+def get_single_participant_data(file_day1, group, data_dir, published_results=0):
     "Get data of an individual participant"
     assert (group < 4)
     "RETURN: data (dict) used for inference"
@@ -112,8 +161,8 @@ def get_participant_data(file_day1, group, data_dir, published_results=0):
     blockidx = []
     for block in range(14):
         "Mark the beginning of a new block"
-        trialsequence.append(torch.tensor(-1))
-        trialsequence_wo_jokers.append(torch.tensor(-1))
+        trialsequence.append(np.array(-1))
+        trialsequence_wo_jokers.append(np.array(-1))
         blocktype.append("n")
         blockidx.append(block)
 
@@ -133,18 +182,18 @@ def get_participant_data(file_day1, group, data_dir, published_results=0):
                      for i in range(len(trialsequence))]
     trialsequence_wo_jokers = [[trialsequence_wo_jokers[i].item()] for i in range(
         len(trialsequence_wo_jokers))]
-    choices = [torch.tensor([choices[i]]) for i in range(len(choices))]
-    outcomes = [torch.tensor([outcomes[i]]) for i in range(len(outcomes))]
+    choices = [np.array([choices[i]]) for i in range(len(choices))]
+    outcomes = [np.array([outcomes[i]]) for i in range(len(outcomes))]
     blocktype = [[blocktype[i]] for i in range(len(blocktype))]
     blockidx = [[blockidx[i]] for i in range(len(blockidx))]
     RT = [[RT[i]] for i in range(len(RT))]
 
-    data = {"Trialsequence": trialsequence,
-            "Trialsequence no jokers": trialsequence_wo_jokers,
-            "Choices": choices,
-            "Outcomes": outcomes,
-            "Blocktype": blocktype,
-            "Blockidx": blockidx,
+    data = {"trialsequence": trialsequence,
+            "trialsequence no jokers": trialsequence_wo_jokers,
+            "choices": choices,
+            "outcomes": outcomes,
+            "blocktype": blocktype,
+            "blockidx": blockidx,
             "RT": RT}
 
     return data, ID
@@ -178,21 +227,21 @@ def get_trialseq(group, block_no, published_results=0):
 
     if published_results:
         "Published"
-            mat = scipy.io.loadmat(
-                "/home/sascha/Desktop/vb_model/vbm_torch/matlabcode/published/%s.mat" % blockorder[group][block_no])
+        mat = scipy.io.loadmat(
+            "/home/sascha/Desktop/vb_model/vbm_torch/matlabcode/published/%s.mat" % blockorder[group][block_no])
 
     else:
         "Clipre"
-            mat = scipy.io.loadmat(
-                "/home/sascha/Desktop/vb_model/vbm_torch/matlabcode/clipre/%s.mat" % blockorder[group][block_no])
+        mat = scipy.io.loadmat(
+            "/home/sascha/Desktop/vb_model/vbm_torch/matlabcode/clipre/%s.mat" % blockorder[group][block_no])
 
     types = [["r", "s", "r", "s", "r", "s", "s", "r", "s", "r", "s", "r", "s", "r"],
              ["s", "r", "s", "r", "s", "r", "r", "s", "r", "s", "r", "s", "r", "s"],
              ["r", "s", "r", "s", "r", "s", "s", "r", "s", "r", "s", "r", "s", "r"],
              ["s", "r", "s", "r", "s", "r", "r", "s", "r", "s", "r", "s", "r", "s"]]
 
-    return torch.tensor(numpy.squeeze(mat["sequence"])), types[group][block_no], \
-        torch.tensor(numpy.squeeze(mat["sequence_without_jokers"]))
+    return np.array(numpy.squeeze(mat["sequence"])), types[group][block_no], \
+        np.array(numpy.squeeze(mat["sequence_without_jokers"]))
 
 
 def replace_single_element_lists(value):
@@ -434,9 +483,12 @@ def simulate_model_behaviour(num_agents, model, **kwargs):
                          0.8, 0.2, 0.2, 0.8], matfile_dir='./matlabcode/clipre/')
 
         newenv.run()
-        data = {"Choices": newenv.choices, "Outcomes": newenv.outcomes,
-                "Trialsequence": newenv.data["trialsequence"], "Blocktype": newenv.data["blocktype"],
-                "Jokertypes": newenv.data["jokertypes"], "Blockidx": newenv.data["blockidx"],
+        data = {"choices": newenv.choices, 
+                "outcomes": newenv.outcomes,
+                "trialsequence": newenv.data["trialsequence"], 
+                "blocktype": newenv.data["blocktype"],
+                "jokertypes": newenv.data["jokertypes"], 
+                "blockidx": newenv.data["blockidx"],
                 "Qdiff": [(newenv.agent.Q[i][..., 0] + newenv.agent.Q[i][..., 3])/2 - (newenv.agent.Q[i][..., 1] + newenv.agent.Q[i][..., 2])/2 for i in range(len(newenv.choices))]}
 
         df = pd.DataFrame(data)
@@ -458,23 +510,23 @@ def comp_groupdata(groupdata, for_ddm=1):
     """Trialsequence no jokers and RT are only important for DDM to determine the jokertype"""
 
     if for_ddm:
-        newgroupdata = {"Trialsequence": [],\
+        newgroupdata = {"trialsequence": [],\
                         # "Trialsequence no jokers" : [],\
-                        "Choices": [],\
-                        "Outcomes": [],\
-                        "Blocktype": [],\
-                        "Blockidx": [],\
+                        "choices": [],\
+                        "outcomes": [],\
+                        "blocktype": [],\
+                        "blockidx": [],\
                         "RT": []}
 
     else:
-        newgroupdata = {"Trialsequence": [],\
+        newgroupdata = {"trialsequence": [],\
                         # "Trialsequence no jokers" : [],\
-                        "Choices": [],\
-                        "Outcomes": [],\
-                        "Blocktype": [],\
-                        "Blockidx": []}
+                        "choices": [],\
+                        "outcomes": [],\
+                        "blocktype": [],\
+                        "blockidx": []}
 
-    for trial in range(len(groupdata[0]["Trialsequence"])):
+    for trial in range(len(groupdata[0]["trialsequence"])):
         trialsequence = []
         # trialseq_no_jokers = []
         choices = []
@@ -485,22 +537,24 @@ def comp_groupdata(groupdata, for_ddm=1):
             RT = []
 
         for dt in groupdata:
-            trialsequence.append(dt["Trialsequence"][trial][0])
+            trialsequence.append(dt["trialsequence"][trial][0])
             # trialseq_no_jokers.append(dt["Trialsequence no jokers"][trial][0])
-            choices.append(dt["Choices"][trial][0].item())
-            outcomes.append(dt["Outcomes"][trial][0].item())
-            blocktype.append(dt["Blocktype"][trial][0])
-            blockidx.append(dt["Blockidx"][trial][0])
+            choices.append(dt["choices"][trial][0].item())
+            outcomes.append(dt["outcomes"][trial][0].item())
+            blocktype.append(dt["blocktype"][trial][0])
+            blockidx.append(dt["blockidx"][trial][0])
             if for_ddm:
                 RT.append(dt["RT"][trial][0])
 
-        newgroupdata["Trialsequence"].append(trialsequence)
+        newgroupdata["trialsequence"].append(trialsequence)
         # newgroupdata["Trialsequence no jokers"].append(trialseq_no_jokers)
-        newgroupdata["Choices"].append(torch.tensor(choices, dtype=int))
-        newgroupdata["Outcomes"].append(torch.tensor(outcomes, dtype=int))
-        newgroupdata["Blocktype"].append(blocktype)
-        newgroupdata["Blockidx"].append(blockidx)
+        newgroupdata["choices"].append(np.array(choices, dtype=int))
+        newgroupdata["outcomes"].append(np.array(outcomes, dtype=int))
+        newgroupdata["blocktype"].append(blocktype)
+        newgroupdata["blockidx"].append(blockidx)
         if for_ddm:
             newgroupdata["RT"].append(RT)
 
     return newgroupdata
+
+
