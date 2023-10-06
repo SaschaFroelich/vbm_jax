@@ -9,10 +9,14 @@ import numpy as np
 
 import model_jax as mj
 
-def define_model(exp_data, not_observed):
+def define_model(exp_data, 
+                 num_agents, 
+                 non_dtt_row_indices,
+                 errorrates_stt,
+                 errorrates_dtt):
+    
     """Define priors and likelihood."""
     # num_agents = len(exp_data['choices'][0])
-    num_agents = 1
     
     "First dimension: day, second dimension: agent"
     lrs = numpyro.sample('lrs', dist.Beta(2, 3).expand([2, num_agents]))
@@ -26,9 +30,15 @@ def define_model(exp_data, not_observed):
                      theta_rep_day1=theta_r[0, :][None, :],
                      theta_rep_day2=theta_r[1, :][None, :], 
                      k=4.0,
+                     errorrates_stt = errorrates_stt,
+                     errorrates_dtt = errorrates_dtt,
                      Q_init=jnp.array([[[0.2, 0, 0, 0.2]]*num_agents]))
 
-    probs = one_session(agent, exp_data, num_agents)
+    probs = jnp.squeeze(one_session(agent, exp_data))
+    
+    dfgh
+    
+    probabils = jnp.concatenate((errorrates_dtt*np.ones(probs.shape),(1-errorrates_dtt)*probs), axis = 1)
 
     print("Only for 1 participant")
     # not_observed = [i for i in range(len(exp_data['choices'])) if exp_data['choices'][i] < 0]
@@ -37,29 +47,31 @@ def define_model(exp_data, not_observed):
     "Can I just use numpy here?"
     # not_observed = jnp.unique(jnp.arange(len(exp_data['choices']))[jnp.squeeze(exp_data['choices'] < 0)])
     
-    print("The shapes before")
-    print(probs.shape)
+    # print("The shapes before")
+    # print(probs.shape)
     
-    observed = jnp.delete(exp_data['bin_choices'], jnp.asarray(not_observed))
-    probabils = jnp.delete(probs, jnp.asarray(not_observed), axis = 0)
+    # observed = jnp.delete(exp_data['bin_choices'], jnp.asarray(not_observed))
+    # probabils = jnp.delete(probs, jnp.asarray(not_observed), axis = 0)
     
-    print("The shapes after")
-    print(observed.shape)
-    print(jnp.squeeze(probabils).shape)
+    # print("The shapes after")
+    # print(observed.shape)
+    # print(jnp.squeeze(probabils).shape)
 
     numpyro.sample('like', dist.Categorical(probs=jnp.squeeze(probabils)), obs=observed)
 
-def one_session(agent, exp_data, num_parts):
+def one_session(agent, exp_data):
     """Run one entire session with all trials using the jax agent."""
     # self.prepare_sims()
 
-    num_agents = num_parts
+    # num_agents = num_parts
     # The index of the block in the current experiment
 
     def one_trial(carry, matrices):
         day, trial, blocktype, current_choice, outcome = matrices
         Q, pppchoice, ppchoice, pchoice, seq_counter, rep, V = carry
         
+        print("V[-1] shape, baby!")
+        print(V[-1].shape)
         probs = agent.compute_probs(V, trial)
         
         Q, pppchoice, ppchoice, pchoice, seq_counter, rep, V = \
@@ -100,26 +112,29 @@ def one_session(agent, exp_data, num_parts):
              agent.seq_counter,
              agent.rep,
              agent.V]
+    
+    print("agent V[-1] shape")
+    print(agent.V[-1].shape)
     key, probs = lax.scan(one_trial, carry, matrices)
 
     "Necessarily, probs still contains the values for the new block trials and single-target trials."
 
     return probs[0]
 
-def shorten_data(exp_data):
+# def shorten_data(exp_data):
     
-    "Make sure that all values of exp_data have the same length"
-    lengths = [len(exp_data[key]) for key in exp_data.keys()]
-    assert(np.abs(np.diff(np.array(lengths))).sum() == 0)
+#     "Make sure that all values of exp_data have the same length"
+#     lengths = [len(exp_data[key]) for key in exp_data.keys()]
+#     assert(np.abs(np.diff(np.array(lengths))).sum() == 0)
     
-    for key in exp_data.keys():
-        exp_data[key] = exp_data[key][0:lengths[0]//3]
+#     for key in exp_data.keys():
+#         exp_data[key] = exp_data[key][0:lengths[0]//3]
         
-    return exp_data
+#     return exp_data
 
 #%%
 
-num_agents = 2
+num_agents = 4
 
 num_chains = 1
 num_samples = 500
@@ -132,14 +147,56 @@ num_samples = 500
 #                             theta_rep_day1 = jnp.array([[3.]]),
 #                             theta_rep_day2 = jnp.array([[3.]]))
 
-_, exp_data = mj.simulation(num_agents = num_agents)
+_, exp_data = mj.simulation(num_agents = num_agents, errorrates_dtt = 0.2, errorrates_stt = 0.1) 
+                            # sequence = [1,1,1,1],
+                            # blockorder = [1,1,1,1])
 
-"Discard the new block trials and error trials (<0), as well as single-target trials (<10)"
-# not_observed_because_negative = jnp.unique(jnp.arange(len(exp_data['choices']))[jnp.squeeze(exp_data['choices'] < 0)])
-# not_observed = jnp.unique(jnp.arange(len(exp_data['choices']))[jnp.squeeze(jnp.asarray(exp_data['trialsequence']) < 10)])
-not_observed = jnp.tile(jnp.arange(len(exp_data['choices'])), (num_agents,1)) * (jnp.squeeze(jnp.asarray(exp_data['trialsequence']) < 10).T)
-print("ALso remove the bad responses")
+"not_observed: errors (-2) as well as single-target trials and new block trials."
+new_block_trials = jnp.nonzero(jnp.squeeze(jnp.asarray(exp_data['trialsequence'])[:,0] == -1))[0]
+choices_wo_newblocktrials = jnp.delete(jnp.asarray(exp_data['choices']), new_block_trials, axis = 0)
+trialseq_wo_newblocktrials = jnp.delete(jnp.asarray(exp_data['trialsequence']), new_block_trials, axis = 0)
 
+num_stt = 5712
+num_dtt = 1008
+
+errorrates_stt = jnp.count_nonzero(((trialseq_wo_newblocktrials < 10) * choices_wo_newblocktrials) == -2, axis = 0) / num_stt
+errorrates_dtt = jnp.count_nonzero(((trialseq_wo_newblocktrials > 10) * choices_wo_newblocktrials) == -2, axis = 0) / num_dtt
+
+# "Not observed: new block trials and single target trials."
+# not_observed = jnp.tile(jnp.arange(len(exp_data['choices'])),(num_agents,1)).T* jnp.squeeze(jnp.asarray(exp_data['trialsequence']) < 10)
+
+"The rows where no participant saw a dual-target trial"
+non_dtt_row_indices = np.where(np.all(np.array(exp_data['trialsequence']) < 10, axis=1))[0]
+
+# "Unroll the not_observeds into one long stupid array"
+# not_observed_unrolled = jnp.empty((0,), dtype=int)
+# for ag in range(num_agents):
+#     not_observed_unrolled = jnp.concatenate((not_observed_unrolled,
+#                                              jnp.unique(not_observed[:, ag])))
+
+
+
+num_trials = 6734
+num_agents = 4
+probs=np.random.rand(num_trials, num_agents ,2)
+
+"Add 1s for the errors"
+probs = np.concatenate((np.ones((num_trials, num_agents, 1)), probs), axis=2)
+
+probs_stt_mask = (np.array(exp_data['trialsequence']) < 10)[..., None]
+probs_dtt_mask = (np.array(exp_data['trialsequence']) > 10)[..., None]
+
+"STT"
+"Replace last dimension with the error rates for stt trials"
+probs_new = probs.copy()
+probs_new[:, :, -1] = np.where(probs_stt_mask, 
+                           np.ones((num_trials, num_agents, 3))*np.tile(errorrates_stt, (num_trials, 1))[..., None], 
+                           probs_stt_mask)[:, :, -1]
+
+"Multiply "
+
+
+#%%
 kernel = NUTS(define_model, dense_mass=True)
 mcmc = MCMC(kernel, 
             num_warmup=500, 
@@ -148,10 +205,16 @@ mcmc = MCMC(kernel,
             progress_bar=num_chains == 1)
 
 rng_key = random.PRNGKey(1)
-mcmc.run(rng_key, exp_data=exp_data, not_observed = not_observed)
+mcmc.run(rng_key, 
+         exp_data=exp_data, 
+         num_agents=num_agents,
+         non_dtt_row_indices = non_dtt_row_indices,
+         errorrates_stt = errorrates_stt,
+         errorrates_dtt = errorrates_dtt)
 mcmc.print_summary()
 
 
 #%%
+# group_data = utils.get_group_data()
 
-group_data = utils.get_group_data()
+

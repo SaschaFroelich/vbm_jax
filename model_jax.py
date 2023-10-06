@@ -30,7 +30,6 @@ class Vbm():
         self.num_blocks = 14
         self.trials = 480*self.num_blocks
         self.na = 4  # no. of possible actions
-        self.errorrate = 0.1
 
         self.num_particles = Q_init.shape[0]
         self.num_agents = Q_init.shape[1]
@@ -53,21 +52,10 @@ class Vbm():
         # Compute prior over sequences of length 4
         self.init_seq_counter = {}
         "-1 in seq_counter for beginning of blocks (so previos sequence is [-1,-1,-1])"
-        "-10 in seq_counter for errors)"
+        "-2 in seq_counter for errors"
         self.init_seq_counter = self.k / 4 * jnp.ones((2, 6, 6, 6, 6,
                                                        self.num_agents))
 
-        # indices = product(*([[-10, -1, 0, 1, 2, 3]] * 4))
-        # for idx in indices:
-        #     self.init_seq_counter[idx] = [self.k / 4 for _ in range(self.num_agents)]
-        # for i in [-10, -1, 0, 1, 2, 3]:
-        #     for j in [-10, -1, 0, 1, 2, 3]:
-        #         for k in [-10, -1, 0, 1, 2, 3]:
-        #             for l in [-10, -1, 0, 1, 2, 3]:
-        #                 self.init_seq_counter[str(i) + "," + str(j) + "," + str(k) + "," + str(l)] = [
-        #                     self.k/4 for _ in range(self.num_agents)]
-        # self.seq_counter = jax.tree_util.tree_leaves([self.init_seq_counter.copy(),
-        #                                               self.init_seq_counter.copy()])
         self.seq_counter = self.init_seq_counter.copy()
         for key in kwargs:
             assert (kwargs[key].ndim == 2)
@@ -161,8 +149,21 @@ class Vbm():
         Vopt1 = V[-1][ind_all[:, 0], ind_all[:, 1], ind1_last]
         Vopt2 = V[-1][ind_all[:, 0], ind_all[:, 1], ind2_last]
         probs = self.softmax(jnp.stack((Vopt1, Vopt2), -1))
+        
+        "Manipulate 'probs' here to contain the adjusted probabilities"
+        probs_prime = jnp.where(np.ones(probs.shape) * trial[None,:][...,None] > 10,
+                          probs * (1-self.errorrates_dtt)[..., None],
+                          probs * (1-self.errorrates_stt)[..., None])
 
-        return probs
+        "Ers: array with error rates for stt/ dtt"
+        ers = jnp.where(trial > 10, self.errorrates_dtt, self.errorrates_stt)[..., None]*np.ones((1, self.num_agents, 1))
+        
+        "Concatenate ers with the adjusted probs"
+        probs_new = jnp.concatenate((ers, probs), axis=2)
+        
+        # probs = jnp.concatenate(  , probs)
+
+        return probs_new
 
     def Qoutcomp(self, Qin, choices):
         '''
@@ -175,7 +176,7 @@ class Vbm():
                 Returns a tensor Qout with the same shape as Qin. 
                 Qout contains zeros everywhere except for the positions indicated 
                 by the choices of the participants. In this case the value of Qout is that of Qin.
-                Qout contains 0s for choices indicated by -10 (error choice for example), 
+                Qout contains 0s for choices indicated by -2 (error choice for example), 
                 and will thus be ignored in Q-value updating.
         '''
 
@@ -253,10 +254,13 @@ class Vbm():
     def choose_action(self, V, trial, key):
         "INPUT: trial (in 1-indexing (i.e. MATLAB notation))"
         "OUTPUT: choice response digit (in 0-indexing notation)"
+        "Errorrate applies to single-target trials as well as to dual-target trials."
         # assert trial > -1, "Sascha dumb"
-        sampled = jran.uniform(key)
+        sampled = jran.uniform(key, shape = (self.num_agents, ))
         _, key = jran.split(key)
-        cond_error = sampled > self.errorrate
+        cond_error = jnp.where(trial > 10, sampled > self.errorrates_dtt, sampled > self.errorrates_stt) 
+        print("cond error")
+        print(cond_error.shape)
         cond_trial = trial < 10
         "Dual-target trial"
         option1, option2 = self.find_resp_options(trial)
@@ -503,19 +507,11 @@ def simulation(num_agents=100, key=None, **kwargs):
     if key is None:
         key = jran.PRNGKey(np.random.randint(10000))
         
-    npar = 6
+    npar = 8
     k = 4.0
 
-    lr_day1_true = []
-    theta_Q_day1_true = []
-    theta_rep_day1_true = []
-
-    lr_day2_true = []
-    theta_Q_day2_true = []
-    theta_rep_day2_true = []
     Q_init_group = []
     # groupdata = []
-
     
     if 'lr_day1' in kwargs:
         lr_day1 = kwargs['lr_day1'] # so lr_day1 has shape (1, num_agents)
@@ -526,13 +522,8 @@ def simulation(num_agents=100, key=None, **kwargs):
         theta_Q_day2 = kwargs['theta_Q_day2']
         theta_rep_day2 = kwargs['theta_rep_day2']
     
-        lr_day1_true.append(lr_day1)
-        theta_Q_day1_true.append(theta_Q_day1)
-        theta_rep_day1_true.append(theta_rep_day1)
-    
-        lr_day2_true.append(lr_day2)
-        theta_Q_day2_true.append(theta_Q_day2)
-        theta_rep_day2_true.append(theta_rep_day2)
+        errorrates_stt = kwargs['errorrates_stt']
+        errorrates_dtt = kwargs['errorrates_dtt']
         
     else:
         "Simulate with random parameters"
@@ -546,17 +537,20 @@ def simulation(num_agents=100, key=None, **kwargs):
         lr_day2 = parameter[..., 3]*0.01
         theta_Q_day2 = parameter[..., 4]*6
         theta_rep_day2 = parameter[..., 5]*6
-    
-        lr_day1_true.append(lr_day1)
-        theta_Q_day1_true.append(theta_Q_day1)
-        theta_rep_day1_true.append(theta_rep_day1)
-    
-        lr_day2_true.append(lr_day2)
-        theta_Q_day2_true.append(theta_Q_day2)
-        theta_rep_day2_true.append(theta_rep_day2)
         
+        errorrates_stt = parameter[..., 7]*0.1
+        errorrates_dtt = parameter[..., 6]*0.2
+
+    if 'sequence' in kwargs:
+        sequence = kwargs['sequence']
+    else:
         sequence = np.random.randint(1, 3, size=num_agents).tolist()
-        blockorder_cond = np.random.randint(1, 3, size=num_agents).tolist()
+        
+    if 'blockorder' in kwargs:
+        blockorder = kwargs['blockorder']
+    else:
+        blockorder = np.random.randint(1, 3, size=num_agents).tolist()
+        
 
     Q_init = jnp.repeat(jnp.asarray([[[0.2, 0., 0., 0.2]]]), 
                         num_agents,
@@ -571,12 +565,17 @@ def simulation(num_agents=100, key=None, **kwargs):
                   theta_Q_day2=jnp.asarray(theta_Q_day2),
                   theta_rep_day2=jnp.asarray(theta_rep_day2),
                   k=k,
+                  errorrates_stt = jnp.asarray(errorrates_stt),
+                  errorrates_dtt = jnp.asarray(errorrates_dtt),
                   Q_init=jnp.asarray(Q_init))
+    
+    print("Here, baby!")
+    print(agent.V[-1].shape)
     
     newenv = env.Env(agent, 
                      rewprobs=[0.8, 0.2, 0.2, 0.8],
                      sequence = sequence,
-                     blockorder = blockorder_cond,
+                     blockorder = blockorder,
                      matfile_dir='./matlabcode/clipre/')
     
     key, *outties  = newenv.run(key=key)

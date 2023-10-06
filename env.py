@@ -316,7 +316,17 @@ class Env():
         "Fill with 1s and 0s where option0 or option1 was chosen"
         self.data["bin_choices"] = ((option1 == self.data['choices']) * (self.data['choices'] > -1)).astype(int)
         
+        "Create 'bin_choices_w_errors"
+        "For single-target trials: 0/1: error/ no error"
+        "For dual-target trials: 0: error, 1: 1st response option, 2: 2nd response option"
+        self.data["bin_choices_w_errors"] = jnp.where(self.data['choices'] == -2, 
+                                                      ~(self.data['choices']==-2), 
+                                                      self.data["bin_choices"]+1)   
         
+        self.data["bin_choices_w_errors"] = jnp.where(jnp.asarray(self.data['trialsequence']) > 10,
+                                                      self.data["bin_choices_w_errors"],
+                                                      ~(self.data['choices'] == -2))
+                
         return carry, choices, outcomes, Qs
 
     def envdata_to_df(self):

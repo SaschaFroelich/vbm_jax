@@ -182,3 +182,11 @@ def repeat_interleave(x, num):
     '''
     
     return jnp.hstack([x[:, None]] * num).reshape(-1)
+
+
+#%%
+
+from jax import random as jran
+key = jran.PRNGKey(np.random.randint(10000))
+
+sampled = jran.uniform(key, shape = (4, ))
