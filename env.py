@@ -190,7 +190,6 @@ class Env():
             self.data["jokertypes"].append([-1]*self.agent.num_agents)
             self.data["blockidx"].append([-1]*self.agent.num_agents)
             self.data["blocktype"].append([-1]*self.agent.num_agents)
-            # dfgh
             self.data["blocktype"].extend([[blocktype[i][block, 0] for i in range(self.agent.num_agents)] for _ in range(480)])
             self.data["blockidx"].extend([[block]*self.agent.num_agents]*480)
             
@@ -254,10 +253,10 @@ class Env():
             "Simulates choices in dual-target trials"
             "matrices is [days, trials.T, lin_blocktype.T]"
             day, trial, blocktype = matrices
-            print("Printing shapes")
-            print(day.shape)
-            print(trial.shape)
-            print(blocktype.shape)
+            # print("Printing shapes")
+            # print(day.shape)
+            # print(trial.shape)
+            # print(blocktype.shape)
             key, Q, pppchoice, ppchoice, pchoice, seq_counter, rep, V = carry
             # print("bliblibli")
             # print(type(trial))
@@ -286,7 +285,7 @@ class Env():
             return carry, outtie
         
         days = (np.array(self.data['blockidx']) > 5) + 1
-        trials = np.squeeze(self.data["trialsequence"])
+        trials = jnp.asarray(self.data["trialsequence"])
         blocktype = jnp.asarray(self.data["blocktype"])
         
         # lin_blocktype = jnp.hstack([-jnp.ones((14, 1), dtype=int), blocktype.astype(int)])
@@ -307,15 +306,17 @@ class Env():
         self.data["outcomes"] = outcomes
         
         "Add binary choice data (0/1: first/second response option chosen, -1: no dual-target trial)"
-        print("Test this for multiple agents")
+        # print("Test this for multiple agents")
+        # dfgh
         # option0 = self.agent.find_resp_options(self.data["trialsequence"])[0]
         option1 = self.agent.find_resp_options(self.data["trialsequence"])[1]
         
+        "bin_choices: 0/1: 1st/2nd response option"
         "Fill with -1"
         self.data["bin_choices"] = (-1* (self.data['choices'] > -20)).astype(int)
         "Fill with 1s and 0s where option0 or option1 was chosen"
         self.data["bin_choices"] = ((option1 == self.data['choices']) * (self.data['choices'] > -1)).astype(int)
-        
+                
         "Create 'bin_choices_w_errors"
         "For single-target trials: 0/1: error/ no error"
         "For dual-target trials: 0: error, 1: 1st response option, 2: 2nd response option"
@@ -326,7 +327,6 @@ class Env():
         self.data["bin_choices_w_errors"] = jnp.where(jnp.asarray(self.data['trialsequence']) > 10,
                                                       self.data["bin_choices_w_errors"],
                                                       ~(self.data['choices'] == -2))
-                
         return carry, choices, outcomes, Qs
 
     def envdata_to_df(self):
@@ -367,11 +367,12 @@ class Env():
         trialidx = [tt for _ in range(num_agents) for tt in range(len(sim_df)//num_agents)] # as seen in experiment, thus per participant
         sim_df['trialidx'] = trialidx
         
-        "Add column 'GDchoice'"
+        "Add column 'GDchoice', but don't forget possible errors (-2)!"
         sim_df['GDchoice'] = sim_df.apply(lambda row: 
                                           self.rewprobs[row['choices']] == \
-                                          np.max(self.rewprobs), axis = 1).astype(int)
+                                          np.max(self.rewprobs) if row['choices'] != -2 else -2, axis = 1).astype(int)
         
+            
         end = time.time()
         print("Executed envdata_to_df() in %.2f seconds"%(end-start))
         

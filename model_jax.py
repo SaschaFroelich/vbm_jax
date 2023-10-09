@@ -28,8 +28,8 @@ class Vbm():
         "---- General Setup (the same for every model)----"
         assert (Q_init.ndim == 3)
         self.num_blocks = 14
-        self.trials = 480*self.num_blocks
-        self.na = 4  # no. of possible actions
+        self.TRIALS = 480*self.num_blocks
+        self.NA = 4  # no. of possible actions
 
         self.num_particles = Q_init.shape[0]
         self.num_agents = Q_init.shape[1]
@@ -42,11 +42,11 @@ class Vbm():
         self.Q = [Q_init]  # Goal-Directed Q-Values
         # habitual values (repetition values)
         self.rep = [
-            jnp.ones((self.num_particles, self.num_agents, self.na))/self.na]
+            jnp.ones((self.num_particles, self.num_agents, self.NA))/self.NA]
 
         "K"
         self.k = k
-        self.bad_choice = -2
+        self.BAD_CHOICE = -2
 
         # self.posterior_actions = [] # 2 entries: [p(option1), p(option2)]
         # Compute prior over sequences of length 4
@@ -102,69 +102,6 @@ class Vbm():
 
         return par_dict
 
-    def compute_probs(self, V, trial):
-        '''
-        
-        Parameters
-        ----------
-        V : list containing array, shape [num_particles, num_agents, 4]
-            
-        trial : array with shape [num_agents]
-            DESCRIPTION.
-            
-        day : array with shape [1]
-            DESCRIPTION.
-
-        Returns
-        -------
-        probs : TYPE
-            DESCRIPTION.
-
-        '''
-        
-        option1, option2 = self.find_resp_options(trial)
-
-        "Replace both response options with 1 for those participants who did not see a joker trial"
-        cond1 = jnp.array(option1) > -1
-        cond2 = jnp.array(option2) > -1
-
-        option1 = 1 + (-1 + option1) * cond1
-        option2 = 1 + (-1 + option2) * cond2
-
-        # option1 = jnp.asarray(
-        #     [option1[ii] if option1[ii] > -1 else 1 for ii in range(len(option1))])
-        # option2 = jnp.asarray(
-        #     [option2[ii] if option2[ii] > -1 else 1 for ii in range(len(option2))])
-
-        _, mask1 = self.Qoutcomp(V[-1], option1)
-        # Vopt1 = (self.V[-1][jnp.where(mask1 == 1)]  # (particles, participants, 4)
-        #          ).reshape(self.num_particles, self.num_agents)
-        _, mask2 = self.Qoutcomp(V[-1], option2)
-        # Vopt2 = self.V[-1][jnp.where(mask2 == 1)
-        #                    ].reshape(self.num_particles, self.num_agents)
-        ind1_last = jnp.argsort(mask1, axis=-1)[:, :, -1].reshape(-1)
-        ind_all = jnp.array(list(product(jnp.arange(self.num_particles),
-                                         jnp.arange(self.num_agents))))
-        ind2_last = jnp.argsort(mask2, axis=-1)[:, :, -1].reshape(-1)
-        Vopt1 = V[-1][ind_all[:, 0], ind_all[:, 1], ind1_last]
-        Vopt2 = V[-1][ind_all[:, 0], ind_all[:, 1], ind2_last]
-        probs = self.softmax(jnp.stack((Vopt1, Vopt2), -1))
-        
-        "Manipulate 'probs' here to contain the adjusted probabilities"
-        probs_prime = jnp.where(np.ones(probs.shape) * trial[None,:][...,None] > 10,
-                          probs * (1-self.errorrates_dtt)[..., None],
-                          probs * (1-self.errorrates_stt)[..., None])
-
-        "Ers: array with error rates for stt/ dtt"
-        ers = jnp.where(trial > 10, self.errorrates_dtt, self.errorrates_stt)[..., None]*np.ones((1, self.num_agents, 1))
-        
-        "Concatenate ers with the adjusted probs"
-        probs_new = jnp.concatenate((ers, probs), axis=2)
-        
-        # probs = jnp.concatenate(  , probs)
-
-        return probs_new
-
     def Qoutcomp(self, Qin, choices):
         '''
         
@@ -191,7 +128,7 @@ class Vbm():
             raise Exception("Fehla, digga!")
 
         # no_error_mask = [1 if ch != -10 else 0 for ch in choices]
-        no_error_mask = jnp.array(choices) != self.bad_choice
+        no_error_mask = jnp.array(choices) != self.BAD_CHOICE
         "Replace error choices by the number one"
         choices_noerrors = jnp.where(jnp.asarray(no_error_mask, dtype=bool),
                                      choices, jnp.ones(choices.shape)).astype(int)
@@ -202,7 +139,7 @@ class Vbm():
         num_agents = Qout.shape[1]  # num_agents
 
         # errormask = jnp.asarray([0 if c == -10 else 1 for c in choices])
-        errormask = jnp.array(choices) != self.bad_choice
+        errormask = jnp.array(choices) != self.BAD_CHOICE
         errormask = jnp.broadcast_to(
             errormask, (num_particles, 4, num_agents)).transpose(0, 2, 1)
 
@@ -245,35 +182,158 @@ class Vbm():
             option1_python = jnp.squeeze(option1_python)
             option2_python = jnp.squeeze(option2_python)
         cond = jnp.array(stimulus_mat) > 10
-        option1_python = self.bad_choice + \
-            (-self.bad_choice + option1_python) * cond
-        option2_python = self.bad_choice + \
-            (-self.bad_choice + option2_python) * cond
+        option1_python = self.BAD_CHOICE + \
+            (-self.BAD_CHOICE + option1_python) * cond
+        option2_python = self.BAD_CHOICE + \
+            (-self.BAD_CHOICE + option2_python) * cond
         return option1_python, option2_python
 
+    def compute_probs(self, V, trial):
+        '''
+        
+        Parameters
+        ----------
+        V : list containing array, shape [num_particles, num_agents, 4]
+            
+        trial : array with shape [num_agents]
+            DESCRIPTION.
+            
+        day : array with shape [1]
+            DESCRIPTION.
+
+        Returns
+        -------
+        probs : jnp array with shape [num_particles, num_agents, ??]
+            DESCRIPTION.
+
+        '''
+        assert(V[-1].shape  == (1, self.num_agents, 4))
+        assert(trial.shape  == (self.num_agents,))
+        
+        option1, option2 = self.find_resp_options(trial)
+
+        "Replace both response options with 1 for those participants who did not see a joker trial"
+        cond1 = jnp.array(option1) > -1
+        cond2 = jnp.array(option2) > -1
+
+        option1 = 1 + (-1 + option1) * cond1
+        option2 = 1 + (-1 + option2) * cond2
+
+        # option1 = jnp.asarray(
+        #     [option1[ii] if option1[ii] > -1 else 1 for ii in range(len(option1))])
+        # option2 = jnp.asarray(
+        #     [option2[ii] if option2[ii] > -1 else 1 for ii in range(len(option2))])
+
+        _, mask1 = self.Qoutcomp(V[-1], option1)
+        # Vopt1 = (self.V[-1][jnp.where(mask1 == 1)]  # (particles, participants, 4)
+        #          ).reshape(self.num_particles, self.num_agents)
+        _, mask2 = self.Qoutcomp(V[-1], option2)
+        # Vopt2 = self.V[-1][jnp.where(mask2 == 1)
+        #                    ].reshape(self.num_particles, self.num_agents)
+        ind1_last = jnp.argsort(mask1, axis=-1)[:, :, -1].reshape(-1)
+        ind_all = jnp.array(list(product(jnp.arange(self.num_particles),
+                                          jnp.arange(self.num_agents))))
+        ind2_last = jnp.argsort(mask2, axis=-1)[:, :, -1].reshape(-1)
+        Vopt1 = V[-1][ind_all[:, 0], ind_all[:, 1], ind1_last]
+        Vopt2 = V[-1][ind_all[:, 0], ind_all[:, 1], ind2_last]
+        probs = self.softmax(jnp.stack((Vopt1, Vopt2), -1))
+        
+        "Manipulate 'probs' here to contain the adjusted probabilities (1-errorrate)"
+        probs_prime = jnp.where(jnp.ones(probs.shape) * trial[None,:][...,None] > 10, 
+                          probs * (1-self.errorrates_dtt)[..., None],
+                          probs * (1-self.errorrates_stt)[..., None])
+
+        probs_prime2 = jnp.where(jnp.ones(probs.shape) * trial[None,:][...,None] > 10, 
+                          probs * (1-self.errorrates_dtt)[..., None],
+                          (jnp.ones(probs.shape) * trial[None,:][...,None] < 10) * (1-self.errorrates_stt)[..., None])
+
+
+        "Ers: array with error rates for stt/ dtt"
+        ers = jnp.where(trial > 10, 
+                        self.errorrates_dtt, 
+                        self.errorrates_stt)[..., None]*jnp.ones((1, self.num_agents, 1))
+        
+        "Concatenate ers with the adjusted probs"
+        probs_new = jnp.concatenate((ers, probs_prime), axis=2)
+        
+        
+        "---"
+        stt_mask_1 = jnp.concatenate((jnp.zeros((self.num_agents,1)),
+                                    (trial<10)[...,None],
+                                    jnp.zeros((self.num_agents,1))),axis=1)[None,...]
+        
+        stt_mask_2 = jnp.concatenate((jnp.zeros((self.num_agents,1)),
+                                    jnp.zeros((self.num_agents,1)),
+                                    (trial<10)[...,None]),axis=1)[None,...]
+        
+        probs_new2 = jnp.where(stt_mask_1, probs_new*2, probs_new)
+        probs_new2 = jnp.where(stt_mask_2, jnp.zeros(probs_new2.shape), probs_new2)
+                
+        return probs_new2
+
     def choose_action(self, V, trial, key):
-        "INPUT: trial (in 1-indexing (i.e. MATLAB notation))"
-        "OUTPUT: choice response digit (in 0-indexing notation)"
-        "Errorrate applies to single-target trials as well as to dual-target trials."
+        '''
+        Parameters
+        ----------
+        V : list containing jnp array with shape (num_particles, num_agents, 4)
+            The current action values for actions 0 through 3
+        trial : jnp array, shape [num_agents]
+            the current trial in 1-indexed notation (because from MATLAB) (so 1, 2, 3, 4, 12, 14, etc.).
+        key : jran key
+
+        Returns
+        -------
+        actual_choice : jnp array, shape (num_particles, num_agents)
+            returns the actual choice in 0-indexed notation (so -2, 0, 1, 2, or 3).
+        key : jran key
+
+        '''
+        
+        assert(V[-1].shape  == (1, self.num_agents, 4))
+        assert(trial.shape  == (self.num_agents,))
+               
+        "New and bad"
         # assert trial > -1, "Sascha dumb"
-        sampled = jran.uniform(key, shape = (self.num_agents, ))
-        _, key = jran.split(key)
-        cond_error = jnp.where(trial > 10, sampled > self.errorrates_dtt, sampled > self.errorrates_stt) 
-        print("cond error")
-        print(cond_error.shape)
-        cond_trial = trial < 10
+        # sampled = jran.uniform(key, shape = (self.num_agents, ))
+        # _, key = jran.split(key)
+        # cond_error = jnp.where(trial > 10, sampled > self.errorrates_dtt, sampled > self.errorrates_stt) 
+        # print("cond error")
+        # print(cond_error.shape)
+        # cond_trial = trial < 10
         "Dual-target trial"
         option1, option2 = self.find_resp_options(trial)
         probs = self.compute_probs(V, trial)
-        choice_sample = jran.uniform(key, shape=probs.shape[:2]) > probs[:, :, 0]
+        
+        "----"
+        choice_sample = jran.categorical(key, jnp.log(probs))
         _, key = jran.split(key)
-        choice_python = option2 * choice_sample + \
-            option1 * (1-choice_sample)
-        choice_if_noerror = (trial - 1) * cond_trial + \
-            choice_python * (1 - cond_trial)
-        actual_choice = self.bad_choice * \
-            (1 - cond_error) + choice_if_noerror * cond_error
-            
+        "---"
+        
+        "----"
+        
+        actual_choice_dtt = (choice_sample == 0) * self.BAD_CHOICE + \
+            (choice_sample == 1) * option1 + (choice_sample == 2) * option2
+
+        actual_choice_stt = (choice_sample == 0) * self.BAD_CHOICE +  \
+                        (choice_sample > 0) * (trial-1)
+
+        actual_choice = actual_choice_dtt * (trial > 10) + \
+            actual_choice_stt * (trial < 10)
+
+        # dfgh
+        # actual_choice = jnp.asarray([option1])
+        
+        "----"
+        
+        # choice_sample = jran.uniform(key, shape=probs.shape[:2]) > probs[:, :, 0]
+        # _, key = jran.split(key)
+        # choice_python = option2 * choice_sample + \
+        #     option1 * (1-choice_sample)
+        # choice_if_noerror = (trial - 1) * cond_trial + \
+        #     choice_python * (1 - cond_trial)
+        # actual_choice = self.BAD_CHOICE * \
+        #     (1 - cond_error) + choice_if_noerror * cond_error
+                
         return actual_choice, key
 
 class Vbm_B(Vbm):
@@ -470,7 +530,7 @@ class Vbm_B(Vbm):
         rep = [new_rep * (trial[None, :, None] != -1) +
                     jnp.ones((self.num_particles,
                               self.num_agents,
-                              self.na))/self.na * (trial[None, :, None] == -1)]
+                              self.NA))/self.NA * (trial[None, :, None] == -1)]
 
         "----- Compute new V-values for next trial -----"
         V = self.update_V(day=day[0], rep=rep, Q=Q)
@@ -569,9 +629,6 @@ def simulation(num_agents=100, key=None, **kwargs):
                   errorrates_dtt = jnp.asarray(errorrates_dtt),
                   Q_init=jnp.asarray(Q_init))
     
-    print("Here, baby!")
-    print(agent.V[-1].shape)
-    
     newenv = env.Env(agent, 
                      rewprobs=[0.8, 0.2, 0.2, 0.8],
                      sequence = sequence,
@@ -659,12 +716,15 @@ def plot_simulated(sim_df):
     '''
     "First remove entries where jokertypes == -1"
     sim_df = sim_df[sim_df.jokertypes != -1]
+    sim_df = sim_df[sim_df.GDchoice != -2]
+    
     grouped = sim_df.groupby(['blockidx', 'jokertypes'])
     average = grouped['GDchoice'].mean()
     
     new_df = pd.DataFrame(average)
     fig,ax = plt.subplots()
     ax1 = sns.lineplot(data=new_df, x="blockidx", y="GDchoice", hue="jokertypes")
+    plt.ylim([0,1 ])
     # lines = ax1.get_lines()
     # ipdb.set_trace()
     # min_y = np.min([line.get_ydata().min() for line in lines])
