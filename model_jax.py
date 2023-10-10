@@ -297,8 +297,6 @@ class Vbm():
         # sampled = jran.uniform(key, shape = (self.num_agents, ))
         # _, key = jran.split(key)
         # cond_error = jnp.where(trial > 10, sampled > self.errorrates_dtt, sampled > self.errorrates_stt) 
-        # print("cond error")
-        # print(cond_error.shape)
         # cond_trial = trial < 10
         "Dual-target trial"
         option1, option2 = self.find_resp_options(trial)
@@ -456,20 +454,6 @@ class Vbm_B(Vbm):
             V[-1] is array containing the action values for the next trial
 
         '''
-        # print("Printing at beginning of update()")
-        # print(choices.shape)
-        # print(outcome.shape)
-        # print(blocktype.shape)
-        # print(day.shape)
-        # print(trial.shape)
-        # print(Q[-1].shape)
-        # print(pppchoice.shape)
-        # print(ppchoice.shape)
-        # print(pchoice.shape)
-        # print("seqcounter")
-        # print(seq_counter.shape)
-        # print(rep[-1].shape)
-        # print(V[-1].shape)
         
         lr = self.lr_day1 * (day == 1) + \
             self.lr_day2 * (day == 2)
