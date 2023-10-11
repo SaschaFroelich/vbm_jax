@@ -1,6 +1,8 @@
 import os
 os.environ["XLA_FLAGS"] = "--xla_cpu_multi_thread_eigen=false intra_op_parallelism_threads=1"
 import numpyro
+
+numpyro.set_platform('cpu')
 numpyro.set_host_device_count(4)
 
 import utils
@@ -14,68 +16,54 @@ import numpy as np
 
 import model_jax as mj
 
-def define_model(exp_data, 
-                 num_agents, 
-                 non_dtt_row_indices,
-                 errorrates_stt,
-                 errorrates_dtt):
+
+def define_model(agent,
+                exp_data,
+                non_dtt_row_indices,
+                errorrates_stt,
+                errorrates_dtt):
     
     """Define priors and likelihood."""
-    # num_agents = len(exp_data['choices'][0])
-    
     observed = jnp.delete(exp_data['bin_choices_w_errors'], non_dtt_row_indices, axis = 0)
     
-    with numpyro.plate('subject', num_agents) as ind:
-        
-        "First dimension: day, second dimension: agent"
-        lrs_day1 = numpyro.sample('lrs_day1', dist.Beta(2, 3))
-        lrs_day2 = numpyro.sample('lrs_day2', dist.Beta(2, 3))
-        
-        theta_q_day1 = numpyro.sample('theta_q_day1', dist.HalfNormal(8))#.expand([2]))
-        theta_q_day2 = numpyro.sample('theta_q_day2', dist.HalfNormal(8))#.expand([2]))
+    a = numpyro.param('a', jnp.ones(agent.num_parameters), constraint=dist.constraints.positive)
+    lam = numpyro.param('lam', jnp.ones(agent.num_parameters), constraint=dist.constraints.positive)
+    tau = numpyro.sample('tau', dist.Gamma(a, a/lam).to_event(1)) # Why a/lam?
+    
+    sig = 1/jnp.sqrt(tau) # Gaus sigma
 
-        theta_r_day1 = numpyro.sample('theta_r_day1', dist.HalfNormal(8))#.expand([2]))
-        theta_r_day2 = numpyro.sample('theta_r_day2', dist.HalfNormal(8))#.expand([2]))
+    # each model parameter has a hyperprior defining group level mean
+    # in the form of a Normal distribution
+    m = numpyro.param('m', jnp.zeros(agent.num_parameters))
+    s = numpyro.param('s', jnp.ones(agent.num_parameters), constraint=dist.constraints.positive)
+    mu = numpyro.sample('mu', dist.Normal(m, s*sig).to_event(1)) # Gauss mu, wieso s*sig?
+
+    with numpyro.plate('subject', agent.num_agents) as ind:
         
-        agent = mj.Vbm_B(lr_day1=lrs_day1[None, :], 
-                         lr_day2=lrs_day2[None, :], 
-                         theta_Q_day1=theta_q_day1[None, :],
-                         theta_Q_day2=theta_q_day1[None, :], 
-                         theta_rep_day1=theta_r_day1[None, :],
-                         theta_rep_day2=theta_r_day2[None, :], 
-                         k=4.0,
-                         errorrates_stt = errorrates_stt,
-                         errorrates_dtt = errorrates_dtt,
-                         Q_init=jnp.array([[[0.2, 0, 0, 0.2]]*num_agents]))
+        # draw parameters from Normal and transform (for numeric trick reasons)
+        base_dist = dist.Normal(0., 1.).expand_by([agent.num_parameters]).to_event(1)
+        transform = dist.transforms.AffineTransform(mu, sig)
+        # print("CHECKPOINT BRAVO")
+        locs = numpyro.sample('locs', dist.TransformedDistribution(base_dist, [transform]))
+
+        "locs is either of shape [n_participants, n_parameters] or of shape [n_particles, n_participants, n_parameters]"
+        if locs.ndim == 2:
+            locs = locs[None, :]
+            
+        agent.reset(locs)
         
-        # agent = mj.Vbm_B(lr_day1=lrs[0, :][None, :], 
-        #                  lr_day2=lrs[1, :][None, :], 
-        #                  theta_Q_day1=theta_q[0, :][None, :],
-        #                  theta_Q_day2=theta_q[1, :][None, :], 
-        #                  theta_rep_day1=theta_r[0, :][None, :],
-        #                  theta_rep_day2=theta_r[1, :][None, :], 
-        #                  k=4.0,
-        #                  errorrates_stt = errorrates_stt,
-        #                  errorrates_dtt = errorrates_dtt,
-        #                  Q_init=jnp.array([[[0.2, 0, 0, 0.2]]*num_agents]))
+        num_particles = locs.shape[0]
         
-        # print("What about new block trials?")
         probs = jnp.squeeze(one_session(agent, exp_data))
         "Remove new block trials"
         probabils = jnp.delete(probs, non_dtt_row_indices, axis = 0)
-    
-        # numpyro.sample('like',
-        #                 dist.Categorical(probs=probs), 
-        #                 obs=jnp.squeeze(exp_data['bin_choices_w_errors']))
-        numpyro.sample('like',
-                        dist.Categorical(probs=probabils), 
-                        obs=observed)
+        with numpyro.plate('timesteps', probabils.shape[0]):
+            numpyro.sample('like',
+                            dist.Categorical(probs=probabils), 
+                            obs=observed)
 
 def one_session(agent, exp_data):
     """Run one entire session with all trials using the jax agent."""
-    # self.prepare_sims()
-
-    # num_agents = num_parts
     # The index of the block in the current experiment
 
     def one_trial(carry, matrices):
@@ -107,11 +95,6 @@ def one_session(agent, exp_data):
     blocktype = np.array(exp_data["blocktype"])
     choices = np.array(exp_data['choices'])
     outcomes = np.array(exp_data['outcomes'])
-    # lin_blocktype = jnp.hstack([-jnp.ones((14, 1), dtype=int),
-    #                             blocktype.astype(int)])
-    # lin_blocktype = jnp.repeat(lin_blocktype.reshape(-1)[None, ...],
-    #                            num_agents, axis=0)
-    # trials = jnp.repeat(trials[None, ...], num_agents, axis=0)
     matrices = [days, trials, blocktype, choices, outcomes]
     carry = [agent.Q, 
              agent.pppchoice,
@@ -127,11 +110,13 @@ def one_session(agent, exp_data):
 
     return probs[0]
 
-def perform_inference(exp_data):
+def perform_inference(agent, 
+                      exp_data):
     
     num_agents = len(exp_data['trialsequence'][0])
     num_chains = 1
-    num_samples = 5
+    num_samples = 500
+    num_warmup = 500
     
     new_block_trials = jnp.nonzero(jnp.squeeze(jnp.asarray(exp_data['trialsequence'])[:,0] == -1))[0]
     choices_wo_newblocktrials = jnp.delete(jnp.asarray(exp_data['choices']), new_block_trials, axis = 0)
@@ -149,15 +134,15 @@ def perform_inference(exp_data):
     
     kernel = NUTS(define_model, dense_mass=True)
     mcmc = MCMC(kernel, 
-                num_warmup=5, 
+                num_warmup=num_warmup, 
                 num_samples=num_samples,
                 num_chains=num_chains, 
                 progress_bar=True)
     
     rng_key = random.PRNGKey(1)
     mcmc.run(rng_key, 
-             exp_data=exp_data, 
-             num_agents=num_agents,
+             agent = agent,
+             exp_data = exp_data, 
              non_dtt_row_indices = non_dtt_row_indices,
              errorrates_stt = jnp.asarray([ER_stt]),
              errorrates_dtt = jnp.asarray([ER_dtt]))

@@ -219,17 +219,9 @@ class Vbm():
         option1 = 1 + (-1 + option1) * cond1
         option2 = 1 + (-1 + option2) * cond2
 
-        # option1 = jnp.asarray(
-        #     [option1[ii] if option1[ii] > -1 else 1 for ii in range(len(option1))])
-        # option2 = jnp.asarray(
-        #     [option2[ii] if option2[ii] > -1 else 1 for ii in range(len(option2))])
-
         _, mask1 = self.Qoutcomp(V[-1], option1)
-        # Vopt1 = (self.V[-1][jnp.where(mask1 == 1)]  # (particles, participants, 4)
-        #          ).reshape(self.num_particles, self.num_agents)
         _, mask2 = self.Qoutcomp(V[-1], option2)
-        # Vopt2 = self.V[-1][jnp.where(mask2 == 1)
-        #                    ].reshape(self.num_particles, self.num_agents)
+        
         ind1_last = jnp.argsort(mask1, axis=-1)[:, :, -1].reshape(-1)
         ind_all = jnp.array(list(product(jnp.arange(self.num_particles),
                                           jnp.arange(self.num_agents))))
@@ -256,8 +248,6 @@ class Vbm():
         "Concatenate ers with the adjusted probs"
         probs_new = jnp.concatenate((ers, probs_prime), axis=2)
         
-        
-        "---"
         stt_mask_1 = jnp.concatenate((jnp.zeros((self.num_agents,1)),
                                     (trial<10)[...,None],
                                     jnp.zeros((self.num_agents,1))),axis=1)[None,...]
@@ -302,12 +292,8 @@ class Vbm():
         option1, option2 = self.find_resp_options(trial)
         probs = self.compute_probs(V, trial)
         
-        "----"
         choice_sample = jran.categorical(key, jnp.log(probs))
         _, key = jran.split(key)
-        "---"
-        
-        "----"
         
         actual_choice_dtt = (choice_sample == 0) * self.BAD_CHOICE + \
             (choice_sample == 1) * option1 + (choice_sample == 2) * option2
@@ -317,20 +303,6 @@ class Vbm():
 
         actual_choice = actual_choice_dtt * (trial > 10) + \
             actual_choice_stt * (trial < 10)
-
-        # dfgh
-        # actual_choice = jnp.asarray([option1])
-        
-        "----"
-        
-        # choice_sample = jran.uniform(key, shape=probs.shape[:2]) > probs[:, :, 0]
-        # _, key = jran.split(key)
-        # choice_python = option2 * choice_sample + \
-        #     option1 * (1-choice_sample)
-        # choice_if_noerror = (trial - 1) * cond_trial + \
-        #     choice_python * (1 - cond_trial)
-        # actual_choice = self.BAD_CHOICE * \
-        #     (1 - cond_error) + choice_if_noerror * cond_error
                 
         return actual_choice, key
 
@@ -351,6 +323,7 @@ class Vbm_B(Vbm):
         for par in self.param_names:
             assert (par in kwargs)
 
+        self.num_parameters = 6
         self.dectemp = jnp.asarray([[1.]])
         self.V = []
         self.update_V(day=1, rep=self.rep, Q=self.Q)
@@ -520,6 +493,7 @@ class Vbm_B(Vbm):
         V = self.update_V(day=day[0], rep=rep, Q=Q)
 
         "----- Update action memory -----"
+
         # pchoice stands for "previous choice"
         pppchoice = ppchoice * (trial != -1) - (trial == -1)
         ppchoice = pchoice * (trial != -1) - (trial == -1)
@@ -527,8 +501,36 @@ class Vbm_B(Vbm):
         
         return Q, pppchoice, ppchoice, pchoice, seq_counter, rep, V
 
+    def reset(self, locs):
+        par_dict = self.locs_to_pars(locs)
+        
+        "Setup"
+        self.num_particles = locs.shape[0]
+        self.num_agents = locs.shape[1]
+        
+        "Latent Variables"
+        self.lr_day1 = par_dict["lr_day1"]
+        self.theta_Q_day1 = par_dict["theta_Q_day1"]
+        self.theta_rep_day1 = par_dict["theta_rep_day1"]        
+        
+        self.lr_day2 = par_dict["lr_day2"]
+        self.theta_Q_day2 = par_dict["theta_Q_day2"]
+        self.theta_rep_day2 = par_dict["theta_rep_day2"]
+        
+        "K"
+        # self.k = kwargs["k"]
+            
+        "Q and rep"
+        self.Q = [self.Q_init]  # Goal-Directed Q-Values
+        self.rep = [
+            jnp.ones((self.num_particles, self.num_agents, self.NA))/self.NA]
+        
+        self.V = []
+        self.update_V(day=1, rep=self.rep, Q=self.Q)
+        
+        self.seq_counter = self.init_seq_counter.copy()
 
-def simulation(num_agents=100, key=None, **kwargs):
+def simulation(num_agents=100, key=None, DataFrame = False, **kwargs):
     '''
     Simulates agent behaviour for n agents in the same experiment 
     (i.e. all experimental parameters identical for each agent)
@@ -621,9 +623,14 @@ def simulation(num_agents=100, key=None, **kwargs):
     
     key, *outties  = newenv.run(key=key)
     
-    out_df = newenv.envdata_to_df()
+    if DataFrame:
+        out_df = newenv.envdata_to_df()
         
-    return out_df, newenv.data
+    else:
+        out_df = pd.DataFrame({})
+        
+    return out_df, newenv.data, agent
+        
 
 def comp_groupdata(groupdata, for_ddm=1):
     """Trialsequence no jokers and RT are only important for DDM to determine the jokertype"""
