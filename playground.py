@@ -7,12 +7,12 @@ Created on Mon Oct  2 13:13:46 2023
 """
 
 "Simulate behaviour"
-
 import model_jax as mj
 from jax import numpy as jnp
 import numpy as np
+import jax
 
-num_agents = 4
+num_agents = 10
 
 theta_rep_day1 = 200
 theta_rep_day2 = 0
@@ -22,20 +22,39 @@ theta_Q_day2 = 3.
 lr_day1 = 0.00
 lr_day2 = 0.
 
-sim_df, env_data = mj.simulation(num_agents = num_agents, 
-                                 sequence = [1]*num_agents,
-                                 blockorder = [1]*num_agents,
-                                 
-                            errorrates_stt = jnp.ones((1,num_agents))*0.1,
-                            errorrates_dtt = jnp.ones((1,num_agents))*0.2,
-                            lr_day1 = jnp.asarray([[lr_day1]*num_agents]),
-                            lr_day2 = jnp.asarray([[lr_day2]*num_agents]), 
-                            
-                            theta_Q_day1 = jnp.asarray([[theta_Q_day1]*num_agents]),
-                            theta_Q_day2 = jnp.asarray([[theta_Q_day2]*num_agents]),
-                            
-                            theta_rep_day1 = jnp.asarray([[theta_rep_day1]*num_agents]),
-                            theta_rep_day2 = jnp.asarray([[theta_rep_day2]*num_agents]))
+if 1:
+    locs = jnp.array([jax.scipy.special.logit(lr_day1/0.05),
+                    jnp.log(theta_Q_day1),
+                    jnp.log(theta_rep_day1),
+                    jax.scipy.special.logit(lr_day2/0.05),
+                    jnp.log(theta_Q_day2),
+                    jnp.log(theta_rep_day2)])
+    
+    locs = locs.repeat(num_agents).reshape(num_agents,6, order ='F')
+    
+    sim_df, env_data, agent = mj.simulation(num_agents = num_agents, 
+                                      sequence = [1]*num_agents,
+                                      blockorder = [1]*num_agents,
+                                      locs = locs[None, ...],
+                                      DataFrame = True)
+else:
+    sim_df, env_data, agent = mj.simulation(num_agents = num_agents, 
+                                      sequence = [1]*num_agents,
+                                      blockorder = [1]*num_agents,
+
+                                errorrates_stt = jnp.ones((1,num_agents))*0.1,
+                                errorrates_dtt = jnp.ones((1,num_agents))*0.2,
+                                lr_day1 = jnp.asarray([[lr_day1]*num_agents]),
+                                lr_day2 = jnp.asarray([[lr_day2]*num_agents]), 
+                                
+                                theta_Q_day1 = jnp.asarray([[theta_Q_day1]*num_agents]),
+                                theta_Q_day2 = jnp.asarray([[theta_Q_day2]*num_agents]),
+                                
+                                theta_rep_day1 = jnp.asarray([[theta_rep_day1]*num_agents]),
+                                theta_rep_day2 = jnp.asarray([[theta_rep_day2]*num_agents]),
+                                DataFrame = True)
+
+
 
 # choices = outties[0]
 # outcomes = outties[1]

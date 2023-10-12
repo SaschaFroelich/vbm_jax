@@ -9,6 +9,7 @@ Created on Fri May 19 10:16:01 2023
 import pandas as pd
 
 import ipdb
+import jax
 from jax import random as jran
 from jax import numpy as jnp
 from jax import lax
@@ -232,6 +233,7 @@ class Env():
                 # self.data["trialsequence"].extend([[s] for s in seq_matlab])
                 # self.data["jokertypes"].extend([[j] for j in jokertypes])
                 # ipdb.set_trace()
+                
     def run(self, key=None):
         """
         This method is used by simulation()
@@ -327,6 +329,9 @@ class Env():
         self.data["bin_choices_w_errors"] = jnp.where(jnp.asarray(self.data['trialsequence']) > 10,
                                                       self.data["bin_choices_w_errors"],
                                                       ~(self.data['choices'] == -2))
+        
+        self.agent.data = self.data
+        self.agent.jitted_one_session = jax.jit(self.agent.one_session)
         return carry, choices, outcomes, Qs
 
     def envdata_to_df(self):

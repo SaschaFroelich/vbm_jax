@@ -7,7 +7,7 @@ import seaborn as sns
 import pandas as pd
 import numpy as np
 from jax import numpy as jnp
-from jax import lax, nn
+from jax import lax, nn, vmap
 from jax import random as jran
 import jax
 
@@ -55,7 +55,7 @@ class Vbm():
         "-2 in seq_counter for errors"
         self.init_seq_counter = self.k / 4 * jnp.ones((2, 6, 6, 6, 6,
                                                        self.num_agents))
-
+        
         self.seq_counter = self.init_seq_counter.copy()
         for key in kwargs:
             assert (kwargs[key].ndim == 2)
@@ -89,7 +89,7 @@ class Vbm():
             self.omega*self.Q[-1][..., 2]
         V3 = (1-self.omega)*self.rep[-1][..., 3] + \
             self.omega*self.Q[-1][..., 3]
-            
+        
         self.V.append(jnp.stack((V0, V1, V2, V3), 2))
 
     def locs_to_pars(self, locs):
@@ -323,6 +323,7 @@ class Vbm_B(Vbm):
         for par in self.param_names:
             assert (par in kwargs)
 
+
         self.num_parameters = 6
         self.dectemp = jnp.asarray([[1.]])
         self.V = []
@@ -411,7 +412,7 @@ class Vbm_B(Vbm):
             
         ppchoice : array, shape [num_agents]
             DESCRIPTION.
-            
+
         pchoice : array, shape [num_agents]
             DESCRIPTION.
             
@@ -449,22 +450,25 @@ class Vbm_B(Vbm):
         Q = [Qnew * (trial[0] != -1) + Q[-1] * (trial[0] == -1)]
         "--- The following is executed in case of correct and incorrect responses ---"
         "----- Update sequence counters and repetition values of self.rep -----"
+        
         repnew = []
         for agent in range(self.num_agents):
             new_row = [0., 0., 0., 0.]
 
-            "Sequential Block"
             " Update counter "
             old_seq_counter = seq_counter[blocktype[agent],
                                                pppchoice[agent],
                                                ppchoice[agent],
                                                pchoice[agent],
-                                               choices[agent], agent]
+                                               choices[agent], 
+                                               agent]
+            
             seq_counter = seq_counter.at[blocktype[agent],
                                                    pppchoice[agent],
                                                    ppchoice[agent],
                                                    pchoice[agent],
-                                                   choices[agent], agent].set(old_seq_counter + 1)
+                                                   choices[agent], 
+                                                   agent].set(old_seq_counter + 1)
 
             " Update rep values "
             index = (blocktype[agent], 
@@ -480,6 +484,7 @@ class Vbm_B(Vbm):
                      seq_counter[index + (3, agent)])
 
             repnew.append(new_row)
+
         jrepnew = jnp.asarray(repnew)
         new_rep = jnp.broadcast_to(jrepnew[None, ...],
                                    (self.num_particles,
@@ -489,11 +494,11 @@ class Vbm_B(Vbm):
                               self.num_agents,
                               self.NA))/self.NA * (trial[None, :, None] == -1)]
 
+
         "----- Compute new V-values for next trial -----"
         V = self.update_V(day=day[0], rep=rep, Q=Q)
 
         "----- Update action memory -----"
-
         # pchoice stands for "previous choice"
         pppchoice = ppchoice * (trial != -1) - (trial == -1)
         ppchoice = pchoice * (trial != -1) - (trial == -1)
@@ -501,25 +506,88 @@ class Vbm_B(Vbm):
         
         return Q, pppchoice, ppchoice, pchoice, seq_counter, rep, V
 
-    def reset(self, locs):
-        par_dict = self.locs_to_pars(locs)
+    def one_session(self):
+        """Run one entire session with all trials using the jax agent."""
+        # The index of the block in the current experiment
+    
+        def one_trial(carry, matrices):
+            day, trial, blocktype, current_choice, outcome = matrices
+            Q, pppchoice, ppchoice, pchoice, seq_counter, rep, V = carry
+            
+            probs = self.compute_probs(V, trial)
+            
+            Q, pppchoice, ppchoice, pchoice, seq_counter, rep, V = \
+                self.update(current_choice,
+                              outcome, 
+                              blocktype,
+                              day = day,
+                              trial = trial,
+                              Q = Q,
+                              pppchoice = pppchoice, 
+                              ppchoice = ppchoice, 
+                              pchoice = pchoice,
+                              seq_counter = seq_counter,
+                              rep = rep,
+                              V = V)
+            
+            outtie = [probs]
+            carry = [Q, pppchoice, ppchoice, pchoice, seq_counter, rep, V]
+            return carry, outtie
         
-        "Setup"
-        self.num_particles = locs.shape[0]
-        self.num_agents = locs.shape[1]
+        days = (np.array(self.data['blockidx']) > 5) + 1
+        trials = np.array(self.data["trialsequence"])
+        blocktype = np.array(self.data["blocktype"])
+        choices = np.array(self.data['choices'])
+        outcomes = np.array(self.data['outcomes'])
+        matrices = [days, trials, blocktype, choices, outcomes]
+        carry = [self.Q, 
+                 self.pppchoice,
+                 self.ppchoice,
+                 self.pchoice,
+                 self.seq_counter,
+                 self.rep,
+                 self.V]
         
-        "Latent Variables"
-        self.lr_day1 = par_dict["lr_day1"]
-        self.theta_Q_day1 = par_dict["theta_Q_day1"]
-        self.theta_rep_day1 = par_dict["theta_rep_day1"]        
+        key, probs = lax.scan(one_trial, carry, matrices)
+    
+        "Necessarily, probs still contains the values for the new block trials and single-target trials."
+    
+        return probs[0]
+
+    def reset(self, **kwargs):
         
-        self.lr_day2 = par_dict["lr_day2"]
-        self.theta_Q_day2 = par_dict["theta_Q_day2"]
-        self.theta_rep_day2 = par_dict["theta_rep_day2"]
+        if 'locs' in kwargs:
+            locs = kwargs['locs']
+            par_dict = self.locs_to_pars(locs)
+            
+            for key in par_dict.keys():
+                assert (par_dict[key].ndim == 2)
+            
+            "Setup"
+            self.num_particles = locs.shape[0]
+            self.num_agents = locs.shape[1]
+            
+            "Latent Variables"
+            self.lr_day1 = par_dict["lr_day1"]
+            self.theta_Q_day1 = par_dict["theta_Q_day1"]
+            self.theta_rep_day1 = par_dict["theta_rep_day1"]        
+            
+            self.lr_day2 = par_dict["lr_day2"]
+            self.theta_Q_day2 = par_dict["theta_Q_day2"]
+            self.theta_rep_day2 = par_dict["theta_rep_day2"]
+            
+        else:
+            self.lr_day1 = kwargs["lr_day1"]
+            self.theta_Q_day1 = kwargs["theta_Q_day1"]
+            self.theta_rep_day1 = kwargs["theta_rep_day1"]        
+            
+            self.lr_day2 = kwargs["lr_day2"]
+            self.theta_Q_day2 = kwargs["theta_Q_day2"]
+            self.theta_rep_day2 = kwargs["theta_rep_day2"]
         
         "K"
         # self.k = kwargs["k"]
-            
+
         "Q and rep"
         self.Q = [self.Q_init]  # Goal-Directed Q-Values
         self.rep = [
@@ -570,7 +638,7 @@ def simulation(num_agents=100, key=None, DataFrame = False, **kwargs):
     
         errorrates_stt = kwargs['errorrates_stt']
         errorrates_dtt = kwargs['errorrates_dtt']
-        
+                
     else:
         "Simulate with random parameters"
         parameter = jran.uniform(key=key, minval=0, maxval=1,
@@ -597,10 +665,13 @@ def simulation(num_agents=100, key=None, DataFrame = False, **kwargs):
     else:
         blockorder = np.random.randint(1, 3, size=num_agents).tolist()
         
-
-    Q_init = jnp.repeat(jnp.asarray([[[0.2, 0., 0., 0.2]]]), 
-                        num_agents,
-                        axis=1)
+    if np.all(np.array(sequence)==1):
+        Q_init = jnp.repeat(jnp.asarray([[[0.2, 0., 0., 0.2]]]), 
+                            num_agents,
+                            axis=1)
+        
+    else:
+        raise Exception("Q_inits for different sequence have to be implemented")
     
     Q_init_group.append(Q_init)
 
@@ -614,12 +685,19 @@ def simulation(num_agents=100, key=None, DataFrame = False, **kwargs):
                   errorrates_stt = jnp.asarray(errorrates_stt),
                   errorrates_dtt = jnp.asarray(errorrates_dtt),
                   Q_init=jnp.asarray(Q_init))
+
+    if 'locs' in kwargs:
+        agent.reset(kwargs['locs'])
     
-    newenv = env.Env(agent, 
-                     rewprobs=[0.8, 0.2, 0.2, 0.8],
-                     sequence = sequence,
-                     blockorder = blockorder,
-                     matfile_dir='./matlabcode/clipre/')
+    if np.all(np.array(sequence)==1):
+        newenv = env.Env(agent, 
+                         rewprobs = [0.8, 0.2, 0.2, 0.8],
+                         sequence = sequence,
+                         blockorder = blockorder,
+                         matfile_dir='./matlabcode/clipre/')
+    
+    else:
+        raise Exception("rewprobs for different sequence have to be implemented")
     
     key, *outties  = newenv.run(key=key)
     
