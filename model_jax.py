@@ -57,10 +57,12 @@ class Vbm():
                                                        self.num_agents))
         
         self.seq_counter = self.init_seq_counter.copy()
+        
+        "Verify that all model parameters have dimension 2 ([num_particles, num_agents])"
         for key in kwargs:
             assert (kwargs[key].ndim == 2)
 
-        "Latent variables"
+        "Set model parameters"
         for key, value in kwargs.items():
             setattr(self, key, value)
 
@@ -323,22 +325,33 @@ class Vbm_B(Vbm):
         for par in self.param_names:
             assert (par in kwargs)
 
-
         self.num_parameters = 6
         self.dectemp = jnp.asarray([[1.]])
         self.V = []
-        self.update_V(day=1, rep=self.rep, Q=self.Q)
+        self.update_V(day = 1, 
+                      rep = self.rep, 
+                      Q = self.Q,
+                      theta_Q_day1 = self.theta_Q_day1,
+                      theta_Q_day2 = self.theta_Q_day2,
+                      theta_rep_day1 = self.theta_rep_day1,
+                      theta_rep_day2 = self.theta_rep_day2)
 
-    def update_V(self, day, rep, Q):
+    def update_V(self, 
+                 day, 
+                 rep, 
+                 Q, 
+                 theta_Q_day1, 
+                 theta_Q_day2,
+                 theta_rep_day1,
+                 theta_rep_day2):
         "Model-specific function"
         "V(ai) = Θ_r*rep_val(ai) + Θ_Q*Q(ai)"
-
-        theta_rep = jnp.array([self.theta_rep_day1,
-                               self.theta_rep_day2])[1 * (day == 2)]
         
-        theta_Q = jnp.array([self.theta_Q_day1, 
-                             self.theta_Q_day2])[1 * (day == 2)]
+        theta_Q = jnp.array([theta_Q_day1, 
+                             theta_Q_day2])[1 * (day == 2)]
         
+        theta_rep = jnp.array([theta_rep_day1,
+                               theta_rep_day2])[1 * (day == 2)]
 
         # V-Values for actions (i.e. weighted action values)
         V0 = theta_rep * rep[-1][..., 0] + theta_Q*Q[-1][..., 0]
@@ -379,6 +392,12 @@ class Vbm_B(Vbm):
                seq_counter,
                rep,
                V,
+               lr_day1,
+               lr_day2,
+               theta_Q_day1,
+               theta_Q_day2,
+               theta_rep_day1,
+               theta_rep_day2,
                **kwargs):
         '''
         Is called after a dual-target choice and after a single-target choice.
@@ -429,8 +448,8 @@ class Vbm_B(Vbm):
 
         '''
         
-        lr = self.lr_day1 * (day == 1) + \
-            self.lr_day2 * (day == 2)
+        lr = lr_day1 * (day == 1) + \
+            lr_day2 * (day == 2)
             
         pppchoice = (1 - (trial == -1)) * pppchoice - (trial == -1)
         ppchoice = (1 - (trial == -1)) * ppchoice - (trial == -1)
@@ -496,7 +515,13 @@ class Vbm_B(Vbm):
 
 
         "----- Compute new V-values for next trial -----"
-        V = self.update_V(day=day[0], rep=rep, Q=Q)
+        V = self.update_V(day = day[0], 
+                        rep = rep, 
+                        Q = Q,                  
+                        theta_Q_day1 = theta_Q_day1, 
+                        theta_Q_day2 = theta_Q_day2,
+                        theta_rep_day1 = theta_rep_day1,
+                        theta_rep_day2 = theta_rep_day2)
 
         "----- Update action memory -----"
         # pchoice stands for "previous choice"
@@ -506,13 +531,20 @@ class Vbm_B(Vbm):
         
         return Q, pppchoice, ppchoice, pchoice, seq_counter, rep, V
 
-    def one_session(self):
+    def one_session(self, 
+                    lr_day1, 
+                    lr_day2, 
+                    theta_Q_day1, 
+                    theta_Q_day2, 
+                    theta_rep_day1,
+                    theta_rep_day2):
         """Run one entire session with all trials using the jax agent."""
         # The index of the block in the current experiment
-    
         def one_trial(carry, matrices):
             day, trial, blocktype, current_choice, outcome = matrices
-            Q, pppchoice, ppchoice, pchoice, seq_counter, rep, V = carry
+            Q, pppchoice, ppchoice, pchoice, seq_counter, rep, V, \
+                lr_day1, lr_day2, theta_Q_day1, theta_Q_day2, \
+                    theta_rep_day1, theta_rep_day2 = carry
             
             probs = self.compute_probs(V, trial)
             
@@ -528,10 +560,28 @@ class Vbm_B(Vbm):
                               pchoice = pchoice,
                               seq_counter = seq_counter,
                               rep = rep,
-                              V = V)
+                              V = V,
+                             lr_day1 = lr_day1, 
+                             lr_day2 = lr_day2, 
+                             theta_Q_day1 = theta_Q_day1, 
+                             theta_Q_day2 = theta_Q_day2,
+                             theta_rep_day1 = theta_rep_day1, 
+                             theta_rep_day2 = theta_rep_day2)
             
             outtie = [probs]
-            carry = [Q, pppchoice, ppchoice, pchoice, seq_counter, rep, V]
+            carry = [Q, 
+                     pppchoice, 
+                     ppchoice, 
+                     pchoice, 
+                     seq_counter, 
+                     rep, 
+                     V, 
+                     lr_day1, 
+                     lr_day2, 
+                     theta_Q_day1, 
+                     theta_Q_day2,
+                     theta_rep_day1, 
+                     theta_rep_day2]
             return carry, outtie
         
         days = (np.array(self.data['blockidx']) > 5) + 1
@@ -539,6 +589,7 @@ class Vbm_B(Vbm):
         blocktype = np.array(self.data["blocktype"])
         choices = np.array(self.data['choices'])
         outcomes = np.array(self.data['outcomes'])
+
         matrices = [days, trials, blocktype, choices, outcomes]
         carry = [self.Q, 
                  self.pppchoice,
@@ -546,7 +597,14 @@ class Vbm_B(Vbm):
                  self.pchoice,
                  self.seq_counter,
                  self.rep,
-                 self.V]
+                 [jnp.ones((1, self.num_agents, 4))],
+                 # self.V,
+                 lr_day1,
+                 lr_day2,
+                 theta_Q_day1,
+                 theta_Q_day2,
+                 theta_rep_day1,
+                 theta_rep_day2]
         
         key, probs = lax.scan(one_trial, carry, matrices)
     

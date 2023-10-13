@@ -248,7 +248,7 @@ class Env():
         self.prepare_sims()
 
         # blocktype = jnp.array(self.blocktype)
-        num_agents = self.agent.num_agents
+        # num_agents = self.agent.num_agents
         # The index of the block in the current experiment
 
         def one_trial(carry, matrices):
@@ -259,7 +259,9 @@ class Env():
             # print(day.shape)
             # print(trial.shape)
             # print(blocktype.shape)
-            key, Q, pppchoice, ppchoice, pchoice, seq_counter, rep, V = carry
+            key, Q, pppchoice, ppchoice, pchoice, seq_counter, rep, V, \
+                lr_day1, lr_day2, theta_Q_day1, theta_Q_day2, \
+                    theta_rep_day1, theta_rep_day2 = carry
             # print("bliblibli")
             # print(type(trial))
             # print(trial.shape)
@@ -270,38 +272,66 @@ class Env():
             _, key = jran.split(key)
             Q, pppchoice, ppchoice, pchoice, seq_counter, rep, V = \
                 self.agent.update(jnp.asarray(current_choice),
-                              jnp.asarray(outcome), 
-                              blocktype,
-                              day=day,
-                              trial=trial,
-                              Q = Q,
-                              pppchoice = pppchoice, 
-                              ppchoice = ppchoice, 
-                              pchoice = pchoice,
-                              seq_counter = seq_counter,
-                              rep =rep,
-                              V = V)
+                                jnp.asarray(outcome), 
+                                blocktype,
+                                day=day,
+                                trial=trial,
+                                Q = Q,
+                                pppchoice = pppchoice, 
+                                ppchoice = ppchoice, 
+                                pchoice = pchoice,
+                                seq_counter = seq_counter,
+                                rep =rep,
+                                V = V,
+                                lr_day1 = lr_day1, 
+                                lr_day2 = lr_day2, 
+                                theta_Q_day1 = theta_Q_day1, 
+                                theta_Q_day2 = theta_Q_day2,
+                                theta_rep_day1 = theta_rep_day1, 
+                                theta_rep_day2 = theta_rep_day2)
             
             outtie = [current_choice, outcome, Q]
-            carry = [key, Q, pppchoice, ppchoice, pchoice, seq_counter, rep, V]
+            carry = [key, 
+                     Q, 
+                     pppchoice, 
+                     ppchoice, 
+                     pchoice, 
+                     seq_counter, 
+                     rep, 
+                     V,
+                     lr_day1, 
+                     lr_day2, 
+                     theta_Q_day1, 
+                     theta_Q_day2,
+                    theta_rep_day1, 
+                    theta_rep_day2]
             return carry, outtie
         
         days = (np.array(self.data['blockidx']) > 5) + 1
         trials = jnp.asarray(self.data["trialsequence"])
         blocktype = jnp.asarray(self.data["blocktype"])
         
-        # lin_blocktype = jnp.hstack([-jnp.ones((14, 1), dtype=int), blocktype.astype(int)])
-        # lin_blocktype = jnp.repeat(lin_blocktype.reshape(-1)[None, ...], num_agents, axis=0)
-        # trials = jnp.repeat(trials[None, ...], num_agents, axis=0)
+        # V0 = self.agent.theta_rep_day1 * self.agent.rep[-1][..., 0] + self.agent.theta_Q_day1*self.agent.Q[-1][..., 0]
+        # V1 = self.agent.theta_rep_day1 * self.agent.rep[-1][..., 1] + self.agent.theta_Q_day1*self.agent.Q[-1][..., 1]
+        # V2 = self.agent.theta_rep_day1 * self.agent.rep[-1][..., 2] + self.agent.theta_Q_day1*self.agent.Q[-1][..., 2]
+        # V3 = self.agent.theta_rep_day1 * self.agent.rep[-1][..., 3] + self.agent.theta_Q_day1*self.agent.Q[-1][..., 3]
+        
         matrices = [days, trials, blocktype]
         carry = [key, 
-                 self.agent.Q, 
-                 self.agent.pppchoice,
-                 self.agent.ppchoice,
-                 self.agent.pchoice,
-                 self.agent.seq_counter,
-                 self.agent.rep,
-                 self.agent.V]
+                self.agent.Q, 
+                self.agent.pppchoice,
+                self.agent.ppchoice,
+                self.agent.pchoice,
+                self.agent.seq_counter,
+                self.agent.rep,
+                # [jnp.ones((1, self.agent.num_agents, 4))],
+                self.agent.V,
+                self.agent.lr_day1, 
+                self.agent.lr_day2, 
+                self.agent.theta_Q_day1, 
+                self.agent.theta_Q_day2,
+                self.agent.theta_rep_day1, 
+                self.agent.theta_rep_day2]
         carry, outties = lax.scan(one_trial, carry, matrices)
         choices, outcomes, Qs = outties
         self.data["choices"] = choices
@@ -331,6 +361,7 @@ class Env():
                                                       ~(self.data['choices'] == -2))
         
         self.agent.data = self.data
+        # ipdb.set_trace()
         self.agent.jitted_one_session = jax.jit(self.agent.one_session)
         return carry, choices, outcomes, Qs
 

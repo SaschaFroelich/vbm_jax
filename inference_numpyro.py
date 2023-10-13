@@ -49,16 +49,23 @@ def define_model_groupinference(agent,
         "locs is either of shape [n_participants, n_parameters] or of shape [n_particles, n_participants, n_parameters]"
         if locs.ndim == 2:
             locs = locs[None, :]
-            
-            
-        agent.reset(locs = locs)
+
+        # agent.reset(locs = locs)
+        param_dict = agent.locs_to_pars(locs)
         
         num_particles = locs.shape[0]
-        
+        # ipdb.set_trace()
         # agent.jitted_one_session = jax.jit(agent.one_session)
-        probs = jnp.squeeze(agent.jitted_one_session())
+        probs = jnp.squeeze(agent.jitted_one_session(lr_day1 = param_dict['lr_day1'],
+                                                     lr_day2 = param_dict['lr_day2'],
+                                                     theta_Q_day1 = param_dict['theta_Q_day1'],
+                                                     theta_Q_day2 = param_dict['theta_Q_day2'],
+                                                     theta_rep_day1 = param_dict['theta_rep_day1'],
+                                                     theta_rep_day2 = param_dict['theta_rep_day2']))
+        # ipdb.set_trace()
         "Remove new block trials"
         probabils = jnp.delete(probs, non_dtt_row_indices, axis = 0)
+        # ipdb.set_trace()
         # with numpyro.plate('timesteps', probs.shape[0]):
         #                     dist.Categorical(probs=probs), 
         #                     obs=agent.data['bin_choices_w_errors'])
@@ -67,7 +74,7 @@ def define_model_groupinference(agent,
             numpyro.sample('like',
                             dist.Categorical(probs=probabils), 
                             obs=observed)
-            
+
 def define_model_singleinference(agent,
                 non_dtt_row_indices,
                 errorrates_stt,
@@ -128,10 +135,11 @@ def perform_inference(agent, num_samples, num_warmup, level):
     ER_dtt = jnp.count_nonzero(((trialseq_wo_newblocktrials > 10) * choices_wo_newblocktrials) == -2, axis = 0) / num_dtt
     
     "Find rows where no participant saw a dtt"
-    non_dtt_row_indices = np.where(np.all(np.array(agent.data['trialsequence']) < 10, axis=1))[0]
+    non_dtt_row_indices = jnp.where(jnp.all(jnp.array(agent.data['trialsequence']) < 10, axis=1))[0]
     
     if level == 2:
         kernel = NUTS(define_model_groupinference, dense_mass=True)
+        
     elif level == 1:
         kernel = NUTS(define_model_singleinference, dense_mass=True)
         
