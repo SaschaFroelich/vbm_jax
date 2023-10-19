@@ -13,11 +13,12 @@ import glob
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
-import model_jax as models
 
 from statistics import mean, stdev
 from math import sqrt
 import numpy as np
+
+import model_jax as models
 
 def get_group_data(published_results = 0):
     '''

@@ -57,13 +57,14 @@ def define_model_groupinference(agent,
         num_particles = locs.shape[0]
         # ipdb.set_trace()
         # agent.jitted_one_session = jax.jit(agent.one_session)
+        
         probs = jnp.squeeze(agent.jitted_one_session(lr_day1 = param_dict['lr_day1'],
                                                      lr_day2 = param_dict['lr_day2'],
                                                      theta_Q_day1 = param_dict['theta_Q_day1'],
                                                      theta_Q_day2 = param_dict['theta_Q_day2'],
                                                      theta_rep_day1 = param_dict['theta_rep_day1'],
                                                      theta_rep_day2 = param_dict['theta_rep_day2']))
-        # ipdb.set_trace()
+        # dfgh
         "Remove new block trials"
         probabils = jnp.delete(probs, non_dtt_row_indices, axis = 0)
         # ipdb.set_trace()
@@ -157,7 +158,8 @@ def perform_grouplevel_inference(agent, num_samples, num_warmup, level):
               non_dtt_row_indices = non_dtt_row_indices,
               errorrates_stt = jnp.asarray([ER_stt]),
               errorrates_dtt = jnp.asarray([ER_dtt]))
-    mcmc.print_summary()
+    
+    # mcmc.print_summary()
     
     return mcmc
 

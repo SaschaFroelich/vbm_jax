@@ -256,16 +256,9 @@ class Env():
             "Simulates choices in dual-target trials"
             "matrices is [days, trials.T, lin_blocktype.T]"
             day, trial, blocktype = matrices
-            # print("Printing shapes")
-            # print(day.shape)
-            # print(trial.shape)
-            # print(blocktype.shape)
             key, Q, pppchoice, ppchoice, pchoice, seq_counter, rep, V, \
                 lr_day1, lr_day2, theta_Q_day1, theta_Q_day2, \
                     theta_rep_day1, theta_rep_day2 = carry
-            # print("bliblibli")
-            # print(type(trial))
-            # print(trial.shape)
             current_choice, key = self.agent.choose_action(V, trial, key)
             outcome = jran.bernoulli(key, self.rewprobs[current_choice % 4])
             current_choice = current_choice[0, ...]
@@ -291,7 +284,7 @@ class Env():
                                 theta_rep_day1 = theta_rep_day1, 
                                 theta_rep_day2 = theta_rep_day2)
             
-            outtie = [current_choice, outcome, Q]
+            outtie = [current_choice, outcome]
             carry = [key, 
                      Q, 
                      pppchoice, 
@@ -334,7 +327,8 @@ class Env():
                 self.agent.theta_rep_day1, 
                 self.agent.theta_rep_day2]
         carry, outties = lax.scan(one_trial, carry, matrices)
-        choices, outcomes, Qs = outties
+        choices, outcomes = outties
+
         self.data["choices"] = choices
         self.data["outcomes"] = outcomes
         
@@ -364,7 +358,7 @@ class Env():
         self.agent.data = self.data
         # ipdb.set_trace()
         self.agent.jitted_one_session = jax.jit(self.agent.one_session)
-        return carry, choices, outcomes, Qs
+        return carry, choices, outcomes
 
     def envdata_to_df(self):
         

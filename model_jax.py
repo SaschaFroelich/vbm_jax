@@ -32,6 +32,7 @@ class Vbm():
         self.NA = 4  # no. of possible actions
 
         self.num_particles = Q_init.shape[0]
+        assert(self.num_particles == 1)
         self.num_agents = Q_init.shape[1]
         self.pppchoice = -1 * jnp.ones(self.num_agents, dtype=int)
         self.ppchoice = -1 * jnp.ones(self.num_agents, dtype=int)
@@ -106,7 +107,6 @@ class Vbm():
 
     def Qoutcomp(self, Qin, choices):
         '''
-        
             Parameters:
                 Qin : torch.tensor() with shape [num_particles, num_agents, 4]
                 choices :   torch.tensor() with shape [num_agents]
@@ -128,37 +128,58 @@ class Vbm():
         else:
             ipdb.set_trace()
             raise Exception("Fehla, digga!")
+        print("Noch testen, digga!")
+            
+        import time
+        start = time.time()
 
-        # no_error_mask = [1 if ch != -10 else 0 for ch in choices]
         no_error_mask = jnp.array(choices) != self.BAD_CHOICE
         "Replace error choices by the number one"
         choices_noerrors = jnp.where(jnp.asarray(no_error_mask, dtype=bool),
                                      choices, jnp.ones(choices.shape)).astype(int)
 
-        Qout = jnp.zeros(Qin.shape, dtype=float)
+        
         choicemask = jnp.zeros(Qin.shape, dtype=int)
-        num_particles = Qout.shape[0]  # num of particles
-        num_agents = Qout.shape[1]  # num_agents
+        num_particles = Qin.shape[0]  # num of particles
+        assert(num_particles==1)
+        num_agents = Qin.shape[1]  # num_agents
 
-        # errormask = jnp.asarray([0 if c == -10 else 1 for c in choices])
         errormask = jnp.array(choices) != self.BAD_CHOICE
         errormask = jnp.broadcast_to(
             errormask, (num_particles, 4, num_agents)).transpose(0, 2, 1)
 
-        x = jnp.arange(num_particles).repeat(num_agents)
-        y = repeat_interleave(jnp.arange(num_agents), num_particles)
-        z = repeat_interleave(choices_noerrors, num_particles)
-        Qout = Qout.at[x, y, z].set(Qin[x, y, z])  # TODO: Improve speed
+        # x = jnp.arange(num_particles).repeat(num_agents)
+        # y = repeat_interleave(jnp.arange(num_agents), num_particles)
+        # z = repeat_interleave(choices_noerrors, num_particles)
+        
+        # x = jnp.zeros(num_agents, dtype=int)
+        # y = jnp.arange(num_agents)
+        # z = choices_noerrors
+        
+        # Qout = jnp.zeros(Qin.shape, dtype=float)
+        # Qout = Qout.at[x, y, z].set(Qin[x, y, z])  # TODO: Improve speed
+        # dfgh
+        Qout = Qin*jnp.eye(num_agents)[choices_noerrors,...][:, 0:4]
+        
+        # dfgh
+        # choicemask = choicemask.at[repeat_interleave(jnp.arange(num_particles), num_agents),
+        #                            jnp.arange(num_agents).repeat(
+        #                                num_particles),
+        #                            choices_noerrors.repeat(num_particles)].set(1)
 
-        # choicemask[repeat_interleave(jnp.arange(num_particles), num_agents),
-        #            jnp.arange(num_agents).repeat(num_particles),
-        #            choices_noerrors.repeat(num_particles)] = 1
-        choicemask = choicemask.at[repeat_interleave(jnp.arange(num_particles), num_agents),
-                                   jnp.arange(num_agents).repeat(
-                                       num_particles),
-                                   choices_noerrors.repeat(num_particles)].set(1)
+        # choicemask = choicemask.at[jnp.zeros(num_agents, dtype = int),
+        #                            jnp.arange(num_agents),
+        #                            choices_noerrors].set(1)
+        
+        choicemask = jnp.eye(num_agents)[choices_noerrors,...][:, 0:4].astype(int)
 
+        # dfgh
         mask = errormask*choicemask
+        
+        
+        print("Execution took %.6f seconds"%(time.time()-start))
+        
+        
         return Qout*mask, mask
 
     def softmax(self, z):
@@ -282,13 +303,7 @@ class Vbm():
         
         assert(V[-1].shape  == (1, self.num_agents, 4))
         assert(trial.shape  == (self.num_agents,))
-               
-        "New and bad"
-        # assert trial > -1, "Sascha dumb"
-        # sampled = jran.uniform(key, shape = (self.num_agents, ))
-        # _, key = jran.split(key)
-        # cond_error = jnp.where(trial > 10, sampled > self.errorrates_dtt, sampled > self.errorrates_stt) 
-        # cond_trial = trial < 10
+        
         "Dual-target trial"
         option1, option2 = self.find_resp_options(trial)
         probs = self.compute_probs(V, trial)
@@ -383,13 +398,13 @@ class Vbm_B(Vbm):
         pos = (blocktype, ppp, pp, p, c)
         
         " Update counter "
-        seq_counter_agent = jnp.where((indices[0] == pos[0]) & 
-                            (indices[1] == pos[1]) & 
-                            (indices[2] == pos[2]) &
-                            (indices[3] == pos[3]) &
-                            (indices[4] == pos[4]), seq_counter_agent+1, seq_counter_agent)
+        seq_counter_agent = jnp.where((indices[0] == pos[0]%6) & 
+                            (indices[1] == pos[1]%6) & 
+                            (indices[2] == pos[2]%6) &
+                            (indices[3] == pos[3]%6) &
+                            (indices[4] == pos[4]%6), seq_counter_agent+1, seq_counter_agent)
         
-        "Update rep values"
+        " Update rep values "
         index = (blocktype, pp, p, c)
 
         seqs_sum = seq_counter_agent[index + (0,)] + seq_counter_agent[index + (1,)] + \
@@ -427,7 +442,7 @@ class Vbm_B(Vbm):
         Parameters
         ----------
         choices : array, shape [num_agents]
-            The particiapnt's choice at the dual-target trial (0-indexed). -2 & -10 are errors.
+            The particiapnt's choice at the dual-target trial (0-indexed). -2 are errors.
             -1 means new block trial
             
         outcome : array, shape [num_agents]
@@ -482,21 +497,17 @@ class Vbm_B(Vbm):
         Qnew = Q[-1] + lr[..., None] * \
             (outcome[None, ..., None]-Qout)*mask
         
-        # Qnew = self.Q[-1]*2
-        # Q = [Qnew]
-        
         Q = [Qnew * (trial[0] != -1) + Q[-1] * (trial[0] == -1)]
         "--- The following is executed in case of correct and incorrect responses ---"
         "----- Update sequence counters and repetition values of self.rep -----"
         
-        print("Bitte noch testen, digga")
         seq_counter, jrepnew = jax.vmap(self.update_habitual, in_axes = (0,0,0,0,0,0))(seq_counter, 
-                                                               blocktype, 
-                                                               pppchoice, 
-                                                               ppchoice, 
-                                                               pchoice, 
-                                                               choices)
-        
+                                                                blocktype, 
+                                                                pppchoice, 
+                                                                ppchoice, 
+                                                                pchoice, 
+                                                                choices)
+
         # "repnew is a list of lists containing the new repetition values for the different agents"
         # repnew = []
         # for agent in range(self.num_agents):
@@ -504,7 +515,7 @@ class Vbm_B(Vbm):
 
         #     indices = np.indices(seq_counter.shape)
         #     pos = (agent, 
-        #            blocktype[agent],
+        #             blocktype[agent],
         #             pppchoice[agent],
         #             ppchoice[agent],
         #             pchoice[agent],
@@ -520,9 +531,9 @@ class Vbm_B(Vbm):
 
         #     "Update rep values "
         #     index = (blocktype[agent], 
-        #              ppchoice[agent],
-        #              pchoice[agent], 
-        #              choices[agent])
+        #               ppchoice[agent],
+        #               pchoice[agent], 
+        #               choices[agent])
             
         #     seqs_sum = seq_counter[(agent,) + index + (0,)] + seq_counter[(agent,) + index + (1,)] + \
         #                 seq_counter[(agent,) + index + (2,)] + seq_counter[(agent,) + index + (3,)]
@@ -535,7 +546,8 @@ class Vbm_B(Vbm):
         # "jrepnew now has shape [num_agents, num_response_options]"
         # jrepnew = jnp.asarray(repnew)
         
-        
+        # print(np.all(jrepnew2==jrepnew))
+        # print(np.all(seq_counter2==seq_counter))
         
         new_rep = jnp.broadcast_to(jrepnew[None, ...],
                                    (self.num_particles,
@@ -730,6 +742,7 @@ def simulation(num_agents=100, key=None, DataFrame = False, **kwargs):
                 
     else:
         "Simulate with random parameters"
+        print("Making up model parameters")
         parameter = jran.uniform(key=key, minval=0, maxval=1,
                                  shape=(1, num_agents, npar))
         _, key = jran.split(key)
@@ -747,11 +760,13 @@ def simulation(num_agents=100, key=None, DataFrame = False, **kwargs):
     if 'sequence' in kwargs:
         sequence = kwargs['sequence']
     else:
+        print("Making up sequence")
         sequence = np.random.randint(1, 3, size=num_agents).tolist()
         
     if 'blockorder' in kwargs:
         blockorder = kwargs['blockorder']
     else:
+        print("Making up blockorder")
         blockorder = np.random.randint(1, 3, size=num_agents).tolist()
         
     if np.all(np.array(sequence)==1):

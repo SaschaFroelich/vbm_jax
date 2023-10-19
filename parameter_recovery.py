@@ -14,19 +14,21 @@ import jax
 from jax import random as jran
 from jax import numpy as jnp
 from jax import vmap
-import model_jax as mj
 import inference_numpyro as inf
 import numpyro
 
+import model_jax as mj
+
 assert(int(jax.__version__.split('.')[1]) >= 4 and int(jax.__version__.split('.')[2]) >= 7)
 
-numpyro.set_platform('cpu')
+numpyro.set_platform('gpu')
+jax.default_device=jax.devices("gpu")[0]
 
-num_agents = 2
+num_agents = 6
 level = 2
 num_sims = 1
 num_samples = 500
-num_warmup = 1_000
+num_warmup = 1000
 
 Q_init_group = []
 num_parameters = 6
@@ -86,11 +88,15 @@ means = agent.locs_to_pars(locs.mean(axis=0))
 
 import matplotlib.pyplot as plt
 
+
+
 for key in means.keys():
+    fig, ax = plt.subplots()
     plt.scatter(np.squeeze(eval(key)), means[key])
+    plt.plot(means[key], means[key])
+    ax.set_xlabel('True value')
+    ax.set_ylabel('Inferred value')
     plt.title(key)
     plt.show()
     
-    
-#%%
 
