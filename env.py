@@ -14,6 +14,7 @@ from jax import random as jran
 from jax import numpy as jnp
 from jax import lax
 import scipy
+from scipy import io
 import numpy as np
 
 
@@ -89,11 +90,11 @@ class Env():
 
         if blocktype == 0:
             "sequential"
-            mat = scipy.io.loadmat(
+            mat = io.loadmat(
                 matfile_dir + prefix + 'trainblock' + str(blocknr+1) + '.mat')
         elif blocktype == 1:
             "random"
-            mat = scipy.io.loadmat(
+            mat = io.loadmat(
                 matfile_dir + prefix + 'random' + str(blocknr+1) + '.mat')
 
         else:

@@ -13,6 +13,7 @@ import numpyro.distributions as dist
 from jax import numpy as jnp
 from jax import random, lax
 import jax
+from jax import random as jran
 import numpy as np
 
 import model_jax as mj
@@ -31,7 +32,7 @@ def define_model_groupinference(agent,
     lam = numpyro.param('lam', jnp.ones(agent.num_parameters), constraint=dist.constraints.positive)
     tau = numpyro.sample('tau', dist.Gamma(a, a/lam).to_event(1)) # Why a/lam?
     
-    sig = 1/jnp.sqrt(tau) # Gaus sigma
+    sig = 1/jnp.sqrt(tau) # Gauss sigma
 
     # each model parameter has a hyperprior defining group level mean
     # in the form of a Normal distribution
@@ -70,7 +71,7 @@ def define_model_groupinference(agent,
         #                     dist.Categorical(probs=probs), 
         #                     obs=agent.data['bin_choices_w_errors'])
 
-        with numpyro.plate('timesteps', probabils.shape[0]):
+        with numpyro.plate('time', probabils.shape[0]):
             numpyro.sample('like',
                             dist.Categorical(probs=probabils), 
                             obs=observed)
@@ -116,7 +117,7 @@ def define_model_singleinference(agent,
                             dist.Categorical(probs=probabils), 
                             obs=observed)
 
-def perform_inference(agent, num_samples, num_warmup, level):
+def perform_grouplevel_inference(agent, num_samples, num_warmup, level):
     
     num_agents = agent.num_agents
     num_chains = 1
@@ -149,12 +150,13 @@ def perform_inference(agent, num_samples, num_warmup, level):
                 num_chains=num_chains, 
                 progress_bar=True)
     
-    rng_key = random.PRNGKey(1)
+    rng_key = jran.PRNGKey(np.random.randint(10_000))
+    
     mcmc.run(rng_key, 
-             agent = agent,
-             non_dtt_row_indices = non_dtt_row_indices,
-             errorrates_stt = jnp.asarray([ER_stt]),
-             errorrates_dtt = jnp.asarray([ER_dtt]))
+              agent = agent,
+              non_dtt_row_indices = non_dtt_row_indices,
+              errorrates_stt = jnp.asarray([ER_stt]),
+              errorrates_dtt = jnp.asarray([ER_dtt]))
     mcmc.print_summary()
     
     return mcmc
@@ -162,4 +164,6 @@ def perform_inference(agent, num_samples, num_warmup, level):
 #%%
 # group_data = utils.get_group_data()
 
+
+#%%
 

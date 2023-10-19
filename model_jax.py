@@ -53,8 +53,8 @@ class Vbm():
         self.init_seq_counter = {}
         "-1 in seq_counter for beginning of blocks (so previos sequence is [-1,-1,-1])"
         "-2 in seq_counter for errors"
-        self.init_seq_counter = self.k / 4 * jnp.ones((2, 6, 6, 6, 6,
-                                                       self.num_agents))
+        "Dimensions are [blocktypes, pppchoice, ppchoice, pchoice, choice, agent]"
+        self.init_seq_counter = self.k / 4 * jnp.ones((self.num_agents, 2, 6, 6, 6, 6))
         
         self.seq_counter = self.init_seq_counter.copy()
         
@@ -192,7 +192,6 @@ class Vbm():
 
     def compute_probs(self, V, trial):
         '''
-        
         Parameters
         ----------
         V : list containing array, shape [num_particles, num_agents, 4]
@@ -379,6 +378,27 @@ class Vbm_B(Vbm):
 
         return par_dict
 
+    def update_habitual(self, seq_counter_agent, blocktype, ppp, pp, p, c):
+        indices = jnp.indices(seq_counter_agent.shape)
+        pos = (blocktype, ppp, pp, p, c)
+        
+        " Update counter "
+        seq_counter_agent = jnp.where((indices[0] == pos[0]) & 
+                            (indices[1] == pos[1]) & 
+                            (indices[2] == pos[2]) &
+                            (indices[3] == pos[3]) &
+                            (indices[4] == pos[4]), seq_counter_agent+1, seq_counter_agent)
+        
+        "Update rep values"
+        index = (blocktype, pp, p, c)
+
+        seqs_sum = seq_counter_agent[index + (0,)] + seq_counter_agent[index + (1,)] + \
+                    seq_counter_agent[index + (2,)] + seq_counter_agent[index + (3,)]
+        
+        new_row_agent = jnp.asarray([seq_counter_agent[index + (aa,)] / seqs_sum for aa in range(4)])
+        
+        return seq_counter_agent, new_row_agent
+
     def update(self, 
                choices, 
                outcome, 
@@ -435,7 +455,7 @@ class Vbm_B(Vbm):
         pchoice : array, shape [num_agents]
             DESCRIPTION.
             
-        seq_counter : array, shape [2, 6, 6, 6, 6, num_agents]
+        seq_counter : array, shape [num_agents, num_blocktypes, 6, 6, 6, 6]
             Dimension 0: 0/1 sequential/ random condition
             Dimensions 1-4: (-2, -1, 0, 1, 2, 3), -2 error, -1 new block trial, 0-3 response digits
             Dimension 5: agent
@@ -447,7 +467,6 @@ class Vbm_B(Vbm):
             V[-1] is array containing the action values for the next trial
 
         '''
-        
         lr = lr_day1 * (day == 1) + \
             lr_day2 * (day == 2)
             
@@ -470,41 +489,54 @@ class Vbm_B(Vbm):
         "--- The following is executed in case of correct and incorrect responses ---"
         "----- Update sequence counters and repetition values of self.rep -----"
         
-        repnew = []
-        for agent in range(self.num_agents):
-            new_row = [0., 0., 0., 0.]
+        print("Bitte noch testen, digga")
+        seq_counter, jrepnew = jax.vmap(self.update_habitual, in_axes = (0,0,0,0,0,0))(seq_counter, 
+                                                               blocktype, 
+                                                               pppchoice, 
+                                                               ppchoice, 
+                                                               pchoice, 
+                                                               choices)
+        
+        # "repnew is a list of lists containing the new repetition values for the different agents"
+        # repnew = []
+        # for agent in range(self.num_agents):
+        #     new_row = [0., 0., 0., 0.]
 
-            " Update counter "
-            old_seq_counter = seq_counter[blocktype[agent],
-                                               pppchoice[agent],
-                                               ppchoice[agent],
-                                               pchoice[agent],
-                                               choices[agent], 
-                                               agent]
+        #     indices = np.indices(seq_counter.shape)
+        #     pos = (agent, 
+        #            blocktype[agent],
+        #             pppchoice[agent],
+        #             ppchoice[agent],
+        #             pchoice[agent],
+        #             choices[agent])
             
-            seq_counter = seq_counter.at[blocktype[agent],
-                                                   pppchoice[agent],
-                                                   ppchoice[agent],
-                                                   pchoice[agent],
-                                                   choices[agent], 
-                                                   agent].set(old_seq_counter + 1)
+        #     " Update counter "
+        #     seq_counter = jnp.where((indices[0] == pos[0]) & 
+        #                         (indices[1] == pos[1]) & 
+        #                         (indices[2] == pos[2]) &
+        #                         (indices[3] == pos[3]) &
+        #                         (indices[4] == pos[4]) &
+        #                         (indices[5] == pos[5]), seq_counter+1, seq_counter)
 
-            " Update rep values "
-            index = (blocktype[agent], 
-                     ppchoice[agent],
-                     pchoice[agent], 
-                     choices[agent])
+        #     "Update rep values "
+        #     index = (blocktype[agent], 
+        #              ppchoice[agent],
+        #              pchoice[agent], 
+        #              choices[agent])
             
-            for aa in range(4):
-                new_row[aa] = seq_counter[index + (aa, agent)] / \
-                    (seq_counter[index + (0, agent)] +
-                     seq_counter[index + (1, agent)] +
-                     seq_counter[index + (2, agent)] +
-                     seq_counter[index + (3, agent)])
-
-            repnew.append(new_row)
-
-        jrepnew = jnp.asarray(repnew)
+        #     seqs_sum = seq_counter[(agent,) + index + (0,)] + seq_counter[(agent,) + index + (1,)] + \
+        #                 seq_counter[(agent,) + index + (2,)] + seq_counter[(agent,) + index + (3,)]
+            
+        #     new_row = [seq_counter[(agent,) + index + (aa,)] / seqs_sum for aa in range(4)]
+                
+        #     "repnew is a list of lists containing the new repetition values for the different agents"
+        #     repnew.append(new_row)
+            
+        # "jrepnew now has shape [num_agents, num_response_options]"
+        # jrepnew = jnp.asarray(repnew)
+        
+        
+        
         new_rep = jnp.broadcast_to(jrepnew[None, ...],
                                    (self.num_particles,
                                     self.num_agents, 4))
@@ -512,7 +544,6 @@ class Vbm_B(Vbm):
                     jnp.ones((self.num_particles,
                               self.num_agents,
                               self.NA))/self.NA * (trial[None, :, None] == -1)]
-
 
         "----- Compute new V-values for next trial -----"
         V = self.update_V(day = day[0], 

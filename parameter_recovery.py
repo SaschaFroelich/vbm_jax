@@ -3,7 +3,7 @@
 """
 Created on Tue Oct 10 15:04:09 2023
 
-Parameter Recovery for MCMC with JAX
+Parameter Recovery for MCMC with JAX.
 
 @author: sascha
 """
@@ -18,9 +18,11 @@ import model_jax as mj
 import inference_numpyro as inf
 import numpyro
 
+assert(int(jax.__version__.split('.')[1]) >= 4 and int(jax.__version__.split('.')[2]) >= 7)
+
 numpyro.set_platform('cpu')
 
-num_agents = 20
+num_agents = 2
 level = 2
 num_sims = 1
 num_samples = 500
@@ -68,9 +70,8 @@ _, exp_data, agent = mj.simulation(num_agents = num_agents,
                             theta_rep_day1 = theta_rep_day1,
                             theta_rep_day2 = theta_rep_day2)
 
-
 print("Running inference.")
-mcmc = inf.perform_inference(agent = agent, 
+mcmc = inf.perform_grouplevel_inference(agent = agent, 
                              num_samples = num_samples,
                              num_warmup = num_warmup,
                              level = level)
@@ -89,3 +90,7 @@ for key in means.keys():
     plt.scatter(np.squeeze(eval(key)), means[key])
     plt.title(key)
     plt.show()
+    
+    
+#%%
+

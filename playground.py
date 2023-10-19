@@ -12,7 +12,7 @@ from jax import numpy as jnp
 import numpy as np
 import jax
 
-num_agents = 10
+num_agents = 2
 
 theta_rep_day1 = 200
 theta_rep_day2 = 0
@@ -22,7 +22,7 @@ theta_Q_day2 = 3.
 lr_day1 = 0.00
 lr_day2 = 0.
 
-if 1:
+if 0:
     locs = jnp.array([jax.scipy.special.logit(lr_day1/0.05),
                     jnp.log(theta_Q_day1),
                     jnp.log(theta_rep_day1),
@@ -38,7 +38,7 @@ if 1:
                                       locs = locs[None, ...],
                                       DataFrame = True)
 else:
-    sim_df, env_data, agent = mj.simulation(num_agents = num_agents, 
+    _, env_data, agent = mj.simulation(num_agents = num_agents, 
                                       sequence = [1]*num_agents,
                                       blockorder = [1]*num_agents,
 
@@ -52,7 +52,7 @@ else:
                                 
                                 theta_rep_day1 = jnp.asarray([[theta_rep_day1]*num_agents]),
                                 theta_rep_day2 = jnp.asarray([[theta_rep_day2]*num_agents]),
-                                DataFrame = True)
+                                DataFrame = False)
 
 
 
@@ -285,7 +285,6 @@ def repeat_interleave(x, num):
     
     return jnp.hstack([x[:, None]] * num).reshape(-1)
 
-
 #%%
 
 from jax import random as jran
@@ -294,3 +293,45 @@ key = jran.PRNGKey(np.random.randint(10000))
 sampled = jran.uniform(key, shape = (4, ))
 
 sampled > errorrates_stt
+
+#%%
+import jax
+from jax import numpy as jnp
+
+num_agents = 3
+blocktype = jnp.asarray([0,0,1])
+pppchoice = jnp.asarray([0,2,1])
+ppchoice = jnp.asarray([0,3,1])
+pchoice = jnp.asarray([2,3,1])
+choice = jnp.asarray([0,3,1])
+
+seq_counter = 4.0 / 4 * jnp.ones((num_agents, 2, 6, 6, 6, 6))
+
+def update_habitual(seq_counter_agent, blocktype, ppp, pp, p, c):
+    indices = jnp.indices(seq_counter_agent.shape)
+    pos = (blocktype, ppp, pp, p, c)
+    
+    " Update counter "
+    seq_counter_agent = jnp.where((indices[0] == pos[0]) & 
+                        (indices[1] == pos[1]) & 
+                        (indices[2] == pos[2]) &
+                        (indices[3] == pos[3]) &
+                        (indices[4] == pos[4]), seq_counter_agent+1, seq_counter_agent)
+    
+    "Update rep values"
+    index = (blocktype, pp, p, c)
+    # dfgh
+    seqs_sum = seq_counter_agent[index + (0,)] + seq_counter_agent[index + (1,)] + \
+                seq_counter_agent[index + (2,)] + seq_counter_agent[index + (3,)]
+    
+    new_row_agent = jnp.asarray([seq_counter_agent[index + (aa,)] / seqs_sum for aa in range(4)])
+    
+    return seq_counter_agent, new_row_agent
+
+
+seq_counter, jrepnew = jax.vmap(update_habitual, in_axes = (0,0,0,0,0,0))(seq_counter, 
+                                                       blocktype, 
+                                                       pppchoice, 
+                                                       ppchoice, 
+                                                       pchoice, 
+                                                       choice)
