@@ -357,6 +357,7 @@ class Env():
         
         self.agent.data = self.data
         # ipdb.set_trace()
+        print("Jitting agent.one_session()")
         self.agent.jitted_one_session = jax.jit(self.agent.one_session)
         return carry, choices, outcomes
 

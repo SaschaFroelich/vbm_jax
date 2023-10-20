@@ -540,7 +540,7 @@ from jax import random as jran
 import jax
 from jax import numpy as jnp
 
-num_agents = 10
+num_agents = 2
 
 Q_init_group = []
 num_parameters = 6
@@ -575,8 +575,9 @@ agent = mj.Vbm_B(lr_day1=jnp.asarray(lr_day1),
               theta_rep_day2=jnp.asarray(theta_rep_day2),
               k=k,
               Q_init=jnp.asarray(Q_init))
-num_agents = 10
-choices = np.array([0,1,-2,1,0,2,3,2,3,-2])
+
+# choices = np.array([0,1,-2,1,0,2,3,2,3,-2])
+choices = np.array([1, 0])
 
 Qin = np.random.rand(1, num_agents,4)
 

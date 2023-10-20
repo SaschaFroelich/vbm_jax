@@ -130,8 +130,8 @@ class Vbm():
             raise Exception("Fehla, digga!")
         print("Noch testen, digga!")
             
-        import time
-        start = time.time()
+        # import time
+        # start = time.time()
 
         no_error_mask = jnp.array(choices) != self.BAD_CHOICE
         "Replace error choices by the number one"
@@ -144,6 +144,7 @@ class Vbm():
         assert(num_particles==1)
         num_agents = Qin.shape[1]  # num_agents
 
+        "errormask will be True for those subjects that performed no error"
         errormask = jnp.array(choices) != self.BAD_CHOICE
         errormask = jnp.broadcast_to(
             errormask, (num_particles, 4, num_agents)).transpose(0, 2, 1)
@@ -158,8 +159,8 @@ class Vbm():
         
         # Qout = jnp.zeros(Qin.shape, dtype=float)
         # Qout = Qout.at[x, y, z].set(Qin[x, y, z])  # TODO: Improve speed
-        # dfgh
-        Qout = Qin*jnp.eye(num_agents)[choices_noerrors,...][:, 0:4]
+        
+        # Qout = Qin*jnp.eye(self.NA)[choices_noerrors,...]
         
         # dfgh
         # choicemask = choicemask.at[repeat_interleave(jnp.arange(num_particles), num_agents),
@@ -171,16 +172,17 @@ class Vbm():
         #                            jnp.arange(num_agents),
         #                            choices_noerrors].set(1)
         
-        choicemask = jnp.eye(num_agents)[choices_noerrors,...][:, 0:4].astype(int)
+        # dgh
+        choicemask = jnp.eye(self.NA)[choices_noerrors, ...].astype(int)
 
         # dfgh
         mask = errormask*choicemask
         
         
-        print("Execution took %.6f seconds"%(time.time()-start))
+        # print("Execution took %.6f seconds"%(time.time()-start))
+        print("Bitte nochmal testen!")
         
-        
-        return Qout*mask, mask
+        return Qin*mask, mask
 
     def softmax(self, z):
         # sm = nn.softmax(dim=-1)
@@ -256,7 +258,8 @@ class Vbm():
         probs_prime = jnp.where(jnp.ones(probs.shape) * trial[None,:][...,None] > 10, 
                           probs * (1-self.errorrates_dtt)[..., None],
                           probs * (1-self.errorrates_stt)[..., None])
-
+        
+        print("What is this doing here?")
         probs_prime2 = jnp.where(jnp.ones(probs.shape) * trial[None,:][...,None] > 10, 
                           probs * (1-self.errorrates_dtt)[..., None],
                           (jnp.ones(probs.shape) * trial[None,:][...,None] < 10) * (1-self.errorrates_stt)[..., None])
@@ -481,7 +484,11 @@ class Vbm_B(Vbm):
         V : list, containing array, shape [num_particles, num_agents, 4]
             V[-1] is array containing the action values for the next trial
 
+        lr_day 1: array, shape [num_particles, num_agents]
+
         '''
+        assert(lr_day1.ndim==2)
+
         lr = lr_day1 * (day == 1) + \
             lr_day2 * (day == 2)
             
@@ -552,6 +559,7 @@ class Vbm_B(Vbm):
         new_rep = jnp.broadcast_to(jrepnew[None, ...],
                                    (self.num_particles,
                                     self.num_agents, 4))
+        
         rep = [new_rep * (trial[None, :, None] != -1) +
                     jnp.ones((self.num_particles,
                               self.num_agents,
@@ -584,7 +592,9 @@ class Vbm_B(Vbm):
         """Run one entire session with all trials using the jax agent."""
         # The index of the block in the current experiment
         def one_trial(carry, matrices):
+            "Matrices"
             day, trial, blocktype, current_choice, outcome = matrices
+            "Carry"
             Q, pppchoice, ppchoice, pchoice, seq_counter, rep, V, \
                 lr_day1, lr_day2, theta_Q_day1, theta_Q_day2, \
                     theta_rep_day1, theta_rep_day2 = carry
@@ -666,6 +676,7 @@ class Vbm_B(Vbm):
             
             "Setup"
             self.num_particles = locs.shape[0]
+            assert(self.num_particles==1)
             self.num_agents = locs.shape[1]
             
             "Latent Variables"
