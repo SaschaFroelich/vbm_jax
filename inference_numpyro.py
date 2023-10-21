@@ -14,8 +14,7 @@ from jax import random as jran
 import numpy as np
 import model_jax as mj
 
-
-def define_model_groupinference(agent,
+def define_model_grouplevelinference(agent,
                 non_dtt_row_indices,
                 errorrates_stt,
                 errorrates_dtt):
@@ -43,13 +42,10 @@ def define_model_groupinference(agent,
         transform = dist.transforms.AffineTransform(mu, sig)
         # print("CHECKPOINT BRAVO")
         locs = numpyro.sample('locs', dist.TransformedDistribution(base_dist, [transform]))
-
-        "locs is either of shape [n_participants, n_parameters] or of shape [n_particles, n_participants, n_parameters]"
-        if locs.ndim == 2:
-            locs = locs[None, :]
+        locs = locs[None, :]
 
         param_dict = agent.locs_to_pars(locs)
-                
+        
         probs = jnp.squeeze(agent.jitted_one_session(lr_day1 = param_dict['lr_day1'],
                                                      lr_day2 = param_dict['lr_day2'],
                                                      theta_Q_day1 = param_dict['theta_Q_day1'],
@@ -66,7 +62,7 @@ def define_model_groupinference(agent,
                             dist.Categorical(probs=probabils), 
                             obs=observed)
 
-def define_model_singleinference(agent,
+def define_model_firstlevelinference(agent,
                 non_dtt_row_indices,
                 errorrates_stt,
                 errorrates_dtt):
@@ -76,16 +72,16 @@ def define_model_singleinference(agent,
                           non_dtt_row_indices, 
                           axis = 0)
     
-    with numpyro.plate('subject', 1):
-        lr_day1 = numpyro.sample('lr_day1', dist.Beta(2, 3))
-        lr_day2 = numpyro.sample('lr_day2', dist.Beta(2, 3))
-        
-        theta_Q_day1 = numpyro.sample('theta_Q_day1', dist.HalfNormal(8.))#.expand([2]))
-        theta_Q_day2 = numpyro.sample('theta_Q_day2', dist.HalfNormal(8.))#.expand([2]))
+    lr_day1 = numpyro.sample('lr_day1', dist.Beta(2, 3))
+    lr_day2 = numpyro.sample('lr_day2', dist.Beta(2, 3))
     
-        theta_rep_day1 = numpyro.sample('theta_rep_day1', dist.HalfNormal(8.))#.expand([2]))
-        theta_rep_day2 = numpyro.sample('theta_rep_day2', dist.HalfNormal(8.))#.expand([2]))
-        
+    theta_Q_day1 = numpyro.sample('theta_Q_day1', dist.HalfNormal(8.))#.expand([2]))
+    theta_Q_day2 = numpyro.sample('theta_Q_day2', dist.HalfNormal(8.))#.expand([2]))
+
+    theta_rep_day1 = numpyro.sample('theta_rep_day1', dist.HalfNormal(8.))#.expand([2]))
+    theta_rep_day2 = numpyro.sample('theta_rep_day2', dist.HalfNormal(8.))#.expand([2]))
+    
+    with numpyro.plate('subject', 1):
         probs = jnp.squeeze(agent.jitted_one_session(lr_day1 = jnp.array([lr_day1]),
                                                      lr_day2 = jnp.array([lr_day2]),
                                                      theta_Q_day1 = jnp.array([theta_Q_day1]),
@@ -95,15 +91,13 @@ def define_model_singleinference(agent,
         
         "Remove new block trials"
         probabils = jnp.delete(probs, non_dtt_row_indices, axis = 0)
-        # dfgh
     
-        # dfgh
         with numpyro.plate('timesteps', probabils.shape[0]):
             numpyro.sample('like',
                             dist.Categorical(probs=probabils), 
                             obs=observed)
 
-def perform_grouplevel_inference(agent, num_samples, num_warmup):
+def perform_grouplevelinference(agent, num_samples, num_warmup):
     
     num_chains = 1
     num_samples = num_samples
@@ -123,7 +117,7 @@ def perform_grouplevel_inference(agent, num_samples, num_warmup):
     "Find rows where no participant saw a dtt"
     non_dtt_row_indices = jnp.where(jnp.all(jnp.array(agent.data['trialsequence']) < 10, axis=1))[0]
     
-    kernel = NUTS(define_model_groupinference, dense_mass=True)
+    kernel = NUTS(define_model_grouplevelinference, dense_mass=True)
         
     mcmc = MCMC(kernel, 
                 num_warmup=num_warmup, 
@@ -142,7 +136,7 @@ def perform_grouplevel_inference(agent, num_samples, num_warmup):
     return mcmc
 
 
-def perform_firstlevel_inference(agent, num_samples, num_warmup):
+def perform_firstlevelinference(agent, num_samples, num_warmup):
     
     num_chains = 1
     
@@ -160,7 +154,7 @@ def perform_firstlevel_inference(agent, num_samples, num_warmup):
     "Find rows where no participant saw a dtt"
     non_dtt_row_indices = jnp.where(jnp.all(jnp.array(agent.data['trialsequence']) < 10, axis=1))[0]
     
-    kernel = NUTS(define_model_singleinference, dense_mass=True)
+    kernel = NUTS(define_model_firstlevelinference, dense_mass=True)
     
     mcmc = MCMC(kernel, 
                 num_warmup=num_warmup, 
@@ -169,7 +163,6 @@ def perform_firstlevel_inference(agent, num_samples, num_warmup):
                 progress_bar=True)
     
     rng_key = jran.PRNGKey(np.random.randint(10_000))
-    
     
     mcmc.run(rng_key, 
               agent = agent,
@@ -182,6 +175,4 @@ def perform_firstlevel_inference(agent, num_samples, num_warmup):
 #%%
 # group_data = utils.get_group_data()
 
-
-#%%
 

@@ -335,7 +335,6 @@ class Env():
         "Add binary choice data (0/1: first/second response option chosen, -1: no dual-target trial)"
         # print("Test this for multiple agents")
         # dfgh
-        # option0 = self.agent.find_resp_options(self.data["trialsequence"])[0]
         option1 = self.agent.find_resp_options(self.data["trialsequence"])[1]
         
         "bin_choices: 0/1: 1st/2nd response option"

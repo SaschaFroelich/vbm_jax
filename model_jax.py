@@ -10,6 +10,7 @@ from jax import numpy as jnp
 from jax import lax, nn, vmap
 from jax import random as jran
 import jax
+import ipdb
 
 import env
 
@@ -26,13 +27,13 @@ class Vbm():
         Q_init : (torch tensor shape [num_particles, num_agents, 4]) initial Q-Values"""
 
         "---- General Setup (the same for every model)----"
-        assert (Q_init.ndim == 3)
+        # assert(Q_init.ndim == 3)
         self.num_blocks = 14
         self.TRIALS = 480*self.num_blocks
         self.NA = 4  # no. of possible actions
 
         self.num_particles = Q_init.shape[0]
-        assert(self.num_particles == 1)
+        # assert(self.num_particles == 1)
         self.num_agents = Q_init.shape[1]
         self.pppchoice = -1 * jnp.ones(self.num_agents, dtype=int)
         self.ppchoice = -1 * jnp.ones(self.num_agents, dtype=int)
@@ -40,10 +41,9 @@ class Vbm():
 
         "Q and rep"
         self.Q_init = Q_init
-        self.Q = [Q_init]  # Goal-Directed Q-Values
+        self.Q = Q_init  # Goal-Directed Q-Values
         # habitual values (repetition values)
-        self.rep = [
-            jnp.ones((self.num_particles, self.num_agents, self.NA))/self.NA]
+        self.rep = jnp.ones((self.num_particles, self.num_agents, self.NA))/self.NA
 
         "K"
         self.k = k
@@ -51,17 +51,16 @@ class Vbm():
 
         # self.posterior_actions = [] # 2 entries: [p(option1), p(option2)]
         # Compute prior over sequences of length 4
-        self.init_seq_counter = {}
         "-1 in seq_counter for beginning of blocks (so previos sequence is [-1,-1,-1])"
         "-2 in seq_counter for errors"
-        "Dimensions are [blocktypes, pppchoice, ppchoice, pchoice, choice, agent]"
+        "Dimensions are [agent, blocktypes, pppchoice, ppchoice, pchoice, choice]"
         self.init_seq_counter = self.k / 4 * jnp.ones((self.num_agents, 2, 6, 6, 6, 6))
         
         self.seq_counter = self.init_seq_counter.copy()
         
         "Verify that all model parameters have dimension 2 ([num_particles, num_agents])"
-        for key in kwargs:
-            assert (kwargs[key].ndim == 2)
+        # for key in kwargs:
+        #     assert(kwargs[key].ndim == 2)
 
         "Set model parameters"
         for key, value in kwargs.items():
@@ -74,65 +73,56 @@ class Vbm():
         "Compute action values V"
         self.param_names = ["omega", "dectemp", "lr"]
 
-        for par in self.param_names:
-            assert (par in kwargs)
+        # for par in self.param_names:
+        #     assert(par in kwargs)
 
-        self.V = []
         self.update_V()
 
     def update_V(self):
         "Model-specific function"
         "V(ai) = (1-ω)*rep_val(ai) + ω*Q(ai)"
         # V-Values for actions (i.e. weighted action values)
-        V0 = (1-self.omega)*self.rep[-1][..., 0] + \
-            self.omega*self.Q[-1][..., 0]
-        V1 = (1-self.omega)*self.rep[-1][..., 1] + \
-            self.omega*self.Q[-1][..., 1]
-        V2 = (1-self.omega)*self.rep[-1][..., 2] + \
-            self.omega*self.Q[-1][..., 2]
-        V3 = (1-self.omega)*self.rep[-1][..., 3] + \
-            self.omega*self.Q[-1][..., 3]
+        V0 = (1-self.omega)*self.rep[..., 0] + self.omega*self.Q[..., 0]
+        V1 = (1-self.omega)*self.rep[..., 1] + self.omega*self.Q[..., 1]
+        V2 = (1-self.omega)*self.rep[..., 2] + self.omega*self.Q[..., 2]
+        V3 = (1-self.omega)*self.rep[..., 3] + self.omega*self.Q[..., 3]
         
-        self.V.append(jnp.stack((V0, V1, V2, V3), 2))
+        self.V = jnp.stack((V0, V1, V2, V3), 2)
 
     def locs_to_pars(self, locs):
         par_dict = {"omega": nn.sigmoid(locs[..., 0]),
                     "dectemp": jnp.exp(locs[..., 1]),
                     "lr": 0.05*nn.sigmoid(locs[..., 2])}
 
-        for key in par_dict:
-            assert (key in self.param_names)
+        # for key in par_dict:
+        #     assert(key in self.param_names)
 
         return par_dict
 
     def Qoutcomp(self, Qin, choices):
         '''
-            Parameters:
-                Qin : torch.tensor() with shape [num_particles, num_agents, 4]
-                choices :   torch.tensor() with shape [num_agents]
+        Only works if all agents see a newblocktrial at the same time.        
 
-            Returns:
-                Returns a tensor Qout with the same shape as Qin. 
-                Qout contains zeros everywhere except for the positions indicated 
-                by the choices of the participants. In this case the value of Qout is that of Qin.
-                Qout contains 0s for choices indicated by -2 (error choice for example), 
-                and will thus be ignored in Q-value updating.
+        Parameters
+        ----------
+        Qin : array with shape [num_particles, num_agents, 4]
+            
+        choices : array with shape [num_agents]
+            Choices of the different agents/ participants. 0-indexed.
+
+        Returns
+        -------
+        Qout : array with shape Qin.shape
+            Qout is Qin for the corresponding agents' choices and 0 otherwise.
+            0 for choices indicated by -2 (error trial).
+
+        mask : bool array with shape Qin.shape
+            1 for the corresponding agents' choices (unless error), and 0 otherwise
+
         '''
 
-        if len(Qin.shape) == 2:
-            Qin = Qin[None, ...]
-
-        elif len(Qin.shape) == 3:
-            pass
-
-        else:
-            ipdb.set_trace()
-            raise Exception("Fehla, digga!")
-        print("Noch testen, digga!")
-            
-        # import time
-        # start = time.time()
-
+        # assert(Qin.ndim == 3)
+                        
         no_error_mask = jnp.array(choices) != self.BAD_CHOICE
         "Replace error choices by the number one"
         choices_noerrors = jnp.where(jnp.asarray(no_error_mask, dtype=bool),
@@ -141,7 +131,7 @@ class Vbm():
         
         choicemask = jnp.zeros(Qin.shape, dtype=int)
         num_particles = Qin.shape[0]  # num of particles
-        assert(num_particles==1)
+        # assert(num_particles==1)
         num_agents = Qin.shape[1]  # num_agents
 
         "errormask will be True for those subjects that performed no error"
@@ -149,63 +139,37 @@ class Vbm():
         errormask = jnp.broadcast_to(
             errormask, (num_particles, 4, num_agents)).transpose(0, 2, 1)
 
-        # x = jnp.arange(num_particles).repeat(num_agents)
-        # y = repeat_interleave(jnp.arange(num_agents), num_particles)
-        # z = repeat_interleave(choices_noerrors, num_particles)
-        
-        # x = jnp.zeros(num_agents, dtype=int)
-        # y = jnp.arange(num_agents)
-        # z = choices_noerrors
-        
-        # Qout = jnp.zeros(Qin.shape, dtype=float)
-        # Qout = Qout.at[x, y, z].set(Qin[x, y, z])  # TODO: Improve speed
-        
-        # Qout = Qin*jnp.eye(self.NA)[choices_noerrors,...]
-        
-        # dfgh
-        # choicemask = choicemask.at[repeat_interleave(jnp.arange(num_particles), num_agents),
-        #                            jnp.arange(num_agents).repeat(
-        #                                num_particles),
-        #                            choices_noerrors.repeat(num_particles)].set(1)
-
-        # choicemask = choicemask.at[jnp.zeros(num_agents, dtype = int),
-        #                            jnp.arange(num_agents),
-        #                            choices_noerrors].set(1)
-        
-        # dgh
         choicemask = jnp.eye(self.NA)[choices_noerrors, ...].astype(int)
 
-        # dfgh
         mask = errormask*choicemask
-        
-        
-        # print("Execution took %.6f seconds"%(time.time()-start))
-        print("Bitte nochmal testen!")
         
         return Qin*mask, mask
 
-    def softmax(self, z):
-        # sm = nn.softmax(dim=-1)
-        # p_actions = sm(self.dectemp[..., None]*z)
-        # return p_actions
-        return nn.softmax(self.dectemp[..., None] * z, axis=-1)
-
     def find_resp_options(self, stimulus_mat):
-        """
+        '''
         Given a dual-target stimulus (e.g. 12, 1-indexed), this function returns the two response
         options in 0-indexing. E.g.: stimulus_mat=14 -> option1_python = 0, option1_python = 3
-        INPUT: stimulus in MATLAB notation (1-indexed) (simple list of stimuli)
-        OUTPUT: response options in python notation (0-indexed)
-        """
+
+        Parameters
+        ----------
+        stimulus_mat : array, shape [num_agents]
+            trial stimulus in MATLAB notation (1-indexed) (simple list of stimuli).
+
+        Returns
+        -------
+        option1_python : TYPE
+            response option 1 in python notation (0-indexed).
+        option2_python : TYPE
+            response option 2 in python notation (0-indexed).
+
+        '''
+        
         stimulus_mat = jnp.array(stimulus_mat, ndmin=1)
 
         option2_python = (jnp.asarray(stimulus_mat, dtype=int) % 10) - 1
         option1_python = (((jnp.asarray(stimulus_mat) -
                           (jnp.asarray(stimulus_mat) % 10)) / 10) - 1).astype(int)
-
-        if option2_python.ndim == 2 and option2_python.shape[0] == 1:
-            option1_python = jnp.squeeze(option1_python)
-            option2_python = jnp.squeeze(option2_python)
+            
         cond = jnp.array(stimulus_mat) > 10
         option1_python = self.BAD_CHOICE + \
             (-self.BAD_CHOICE + option1_python) * cond
@@ -217,7 +181,7 @@ class Vbm():
         '''
         Parameters
         ----------
-        V : list containing array, shape [num_particles, num_agents, 4]
+        V : array, shape [num_particles, num_agents, 4]
             
         trial : array with shape [num_agents]
             DESCRIPTION.
@@ -227,44 +191,33 @@ class Vbm():
 
         Returns
         -------
-        probs : jnp array with shape [num_particles, num_agents, ??]
+        probs : jnp array with shape [num_particles, num_agents, 3]
             DESCRIPTION.
 
         '''
-        assert(V[-1].shape  == (1, self.num_agents, 4))
-        assert(trial.shape  == (self.num_agents,))
-        
+        # assert(V.shape  == (1, self.num_agents, 4))
+        # assert(trial.shape  == (self.num_agents,))
         option1, option2 = self.find_resp_options(trial)
 
         "Replace both response options with 1 for those participants who did not see a joker trial"
-        cond1 = jnp.array(option1) > -1
-        cond2 = jnp.array(option2) > -1
-
-        option1 = 1 + (-1 + option1) * cond1
-        option2 = 1 + (-1 + option2) * cond2
-
-        _, mask1 = self.Qoutcomp(V[-1], option1)
-        _, mask2 = self.Qoutcomp(V[-1], option2)
+        _, mask1 = self.Qoutcomp(V, 1 + (-1 + option1) * (jnp.array(option1) > -1))
+        _, mask2 = self.Qoutcomp(V, 1 + (-1 + option2) * (jnp.array(option2) > -1))
         
         ind1_last = jnp.argsort(mask1, axis=-1)[:, :, -1].reshape(-1)
         ind_all = jnp.array(list(product(jnp.arange(self.num_particles),
                                           jnp.arange(self.num_agents))))
         ind2_last = jnp.argsort(mask2, axis=-1)[:, :, -1].reshape(-1)
-        Vopt1 = V[-1][ind_all[:, 0], ind_all[:, 1], ind1_last]
-        Vopt2 = V[-1][ind_all[:, 0], ind_all[:, 1], ind2_last]
-        probs = self.softmax(jnp.stack((Vopt1, Vopt2), -1))
+        Vopt1 = V[ind_all[:, 0], ind_all[:, 1], ind1_last]
+        Vopt2 = V[ind_all[:, 0], ind_all[:, 1], ind2_last]
+        
+        probs = nn.softmax(self.dectemp[..., None] * jnp.stack((Vopt1, Vopt2), -1), axis=-1)
+        # probs = self.softmax(jnp.stack((Vopt1, Vopt2), -1))
         
         "Manipulate 'probs' here to contain the adjusted probabilities (1-errorrate)"
         probs_prime = jnp.where(jnp.ones(probs.shape) * trial[None,:][...,None] > 10, 
                           probs * (1-self.errorrates_dtt)[..., None],
                           probs * (1-self.errorrates_stt)[..., None])
         
-        print("What is this doing here?")
-        probs_prime2 = jnp.where(jnp.ones(probs.shape) * trial[None,:][...,None] > 10, 
-                          probs * (1-self.errorrates_dtt)[..., None],
-                          (jnp.ones(probs.shape) * trial[None,:][...,None] < 10) * (1-self.errorrates_stt)[..., None])
-
-
         "Ers: array with error rates for stt/ dtt"
         ers = jnp.where(trial > 10, 
                         self.errorrates_dtt, 
@@ -283,14 +236,14 @@ class Vbm():
         
         probs_new2 = jnp.where(stt_mask_1, probs_new*2, probs_new)
         probs_new2 = jnp.where(stt_mask_2, jnp.zeros(probs_new2.shape), probs_new2)
-                
+        
         return probs_new2
 
     def choose_action(self, V, trial, key):
         '''
         Parameters
         ----------
-        V : list containing jnp array with shape (num_particles, num_agents, 4)
+        V : jnp array with shape (num_particles, num_agents, 4)
             The current action values for actions 0 through 3
         trial : jnp array, shape [num_agents]
             the current trial in 1-indexed notation (because from MATLAB) (so 1, 2, 3, 4, 12, 14, etc.).
@@ -304,8 +257,8 @@ class Vbm():
 
         '''
         
-        assert(V[-1].shape  == (1, self.num_agents, 4))
-        assert(trial.shape  == (self.num_agents,))
+        # assert(V.shape  == (1, self.num_agents, 4))
+        # assert(trial.shape  == (self.num_agents,))
         
         "Dual-target trial"
         option1, option2 = self.find_resp_options(trial)
@@ -339,12 +292,11 @@ class Vbm_B(Vbm):
                             "theta_Q_day2", 
                             "theta_rep_day2"]
         
-        for par in self.param_names:
-            assert (par in kwargs)
+        # for par in self.param_names:
+        #     assert(par in kwargs)
 
         self.num_parameters = 6
         self.dectemp = jnp.asarray([[1.]])
-        self.V = []
         self.update_V(day = 1, 
                       rep = self.rep, 
                       Q = self.Q,
@@ -361,23 +313,49 @@ class Vbm_B(Vbm):
                  theta_Q_day2,
                  theta_rep_day1,
                  theta_rep_day2):
+        '''
+        Only works if all agents change from day 1 to day 2 at the same time in experiment.
+
+        Parameters
+        ----------
+        day : int
+            Day of experiment.
+        rep : list containing array with shape [num_particles, num_agents, 4]
+            The repetition values.
+        Q : array, shape [num_particles, num_agents, 4]
+            Q-values.
+        theta_Q_day1 : TYPE
+            DESCRIPTION.
+        theta_Q_day2 : TYPE
+            DESCRIPTION.
+        theta_rep_day1 : TYPE
+            DESCRIPTION.
+        theta_rep_day2 : TYPE
+            DESCRIPTION.
+
+        Returns
+        -------
+        V : array with shape [num_particles, num_agents, 4]
+            The new action values for the next trial.
+
+        '''
+        
         "Model-specific function"
         "V(ai) = Θ_r*rep_val(ai) + Θ_Q*Q(ai)"
         
-        theta_Q = jnp.array([theta_Q_day1, 
-                             theta_Q_day2])[1 * (day == 2)]
-        
-        theta_rep = jnp.array([theta_rep_day1,
-                               theta_rep_day2])[1 * (day == 2)]
+        theta_Q = jnp.array([theta_Q_day1, theta_Q_day2])[1 * (day == 2)]
+        theta_rep = jnp.array([theta_rep_day1, theta_rep_day2])[1 * (day == 2)]
 
         # V-Values for actions (i.e. weighted action values)
-        V0 = theta_rep * rep[-1][..., 0] + theta_Q*Q[-1][..., 0]
-        V1 = theta_rep * rep[-1][..., 1] + theta_Q*Q[-1][..., 1]
-        V2 = theta_rep * rep[-1][..., 2] + theta_Q*Q[-1][..., 2]
-        V3 = theta_rep * rep[-1][..., 3] + theta_Q*Q[-1][..., 3]
+        V0 = theta_rep * rep[..., 0] + theta_Q*Q[..., 0]
+        V1 = theta_rep * rep[..., 1] + theta_Q*Q[..., 1]
+        V2 = theta_rep * rep[..., 2] + theta_Q*Q[..., 2]
+        V3 = theta_rep * rep[..., 3] + theta_Q*Q[..., 3]
 
-        V = [jnp.stack((V0, V1, V2, V3), 2)]
-        self.V = [jnp.stack((V0, V1, V2, V3), 2)]
+        V = jnp.stack((V0, V1, V2, V3), 2)
+        self.V = jnp.stack((V0, V1, V2, V3), 2)
+
+        self.V = V
         
         return V
 
@@ -391,8 +369,8 @@ class Vbm_B(Vbm):
                     "theta_Q_day2": jnp.exp(locs[..., 4]),
                     "theta_rep_day2": jnp.exp(locs[..., 5])}
 
-        for key in par_dict:
-            assert (key in self.param_names)
+        # for key in par_dict:
+        #     assert(key in self.param_names)
 
         return par_dict
 
@@ -461,7 +439,7 @@ class Vbm_B(Vbm):
         trial : array, shape [num_agents]
             The observed trial depends on the experimental group and is not identical across participants.
             
-        Q : list, containing array, shape [num_particles, num_agents, 4]
+        Q : array, shape [num_particles, num_agents, 4]
             The Q-values.
             
         pppchoice : array, shape [num_agents]
@@ -478,16 +456,18 @@ class Vbm_B(Vbm):
             Dimensions 1-4: (-2, -1, 0, 1, 2, 3), -2 error, -1 new block trial, 0-3 response digits
             Dimension 5: agent
             
-        rep : list, containing array, shape [num_particles, num_agents, 4]
-            rep[-1] is array with the repetition (i.e. habit) values.
+        rep : array, shape [num_particles, num_agents, 4]
+            rep is array with the repetition (i.e. habit) values.
             
-        V : list, containing array, shape [num_particles, num_agents, 4]
-            V[-1] is array containing the action values for the next trial
+        V : array, shape [num_particles, num_agents, 4]
+            V is array containing the action values for the next trial
 
-        lr_day 1: array, shape [num_particles, num_agents]
+        day : array, shape [num_agents]
 
+        lr_day1 : array, shape [num_particles, num_agents]
         '''
-        assert(lr_day1.ndim==2)
+        
+        # assert(lr_day1.ndim==2)
 
         lr = lr_day1 * (day == 1) + \
             lr_day2 * (day == 2)
@@ -500,11 +480,11 @@ class Vbm_B(Vbm):
 
         "--- Group!!! ----"
         "mask contains 1s where Qoutcomp() contains non-zero entries"
-        Qout, mask = self.Qoutcomp(Q[-1], choices)
-        Qnew = Q[-1] + lr[..., None] * \
+        Qout, mask = self.Qoutcomp(Q, choices)
+        Qnew = Q + lr[..., None] * \
             (outcome[None, ..., None]-Qout)*mask
         
-        Q = [Qnew * (trial[0] != -1) + Q[-1] * (trial[0] == -1)]
+        Q = Qnew * (trial[0] != -1) + Q * (trial[0] == -1)
         "--- The following is executed in case of correct and incorrect responses ---"
         "----- Update sequence counters and repetition values of self.rep -----"
         
@@ -560,10 +540,9 @@ class Vbm_B(Vbm):
                                    (self.num_particles,
                                     self.num_agents, 4))
         
-        rep = [new_rep * (trial[None, :, None] != -1) +
-                    jnp.ones((self.num_particles,
+        rep = new_rep * (trial[None, :, None] != -1) + jnp.ones((self.num_particles,
                               self.num_agents,
-                              self.NA))/self.NA * (trial[None, :, None] == -1)]
+                              self.NA))/self.NA * (trial[None, :, None] == -1)
 
         "----- Compute new V-values for next trial -----"
         V = self.update_V(day = day[0], 
@@ -644,13 +623,13 @@ class Vbm_B(Vbm):
         outcomes = np.array(self.data['outcomes'])
 
         matrices = [days, trials, blocktype, choices, outcomes]
-        carry = [self.Q, 
+        carry_init = [self.Q, 
                  self.pppchoice,
                  self.ppchoice,
                  self.pchoice,
                  self.seq_counter,
                  self.rep,
-                 [jnp.ones((1, self.num_agents, 4))],
+                 jnp.ones((1, self.num_agents, 4)),
                  # self.V,
                  lr_day1,
                  lr_day2,
@@ -659,7 +638,7 @@ class Vbm_B(Vbm):
                  theta_rep_day1,
                  theta_rep_day2]
         
-        key, probs = lax.scan(one_trial, carry, matrices)
+        key, probs = lax.scan(one_trial, carry_init, matrices)
     
         "Necessarily, probs still contains the values for the new block trials and single-target trials."
     
@@ -671,12 +650,12 @@ class Vbm_B(Vbm):
             locs = kwargs['locs']
             par_dict = self.locs_to_pars(locs)
             
-            for key in par_dict.keys():
-                assert (par_dict[key].ndim == 2)
+            # for key in par_dict.keys():
+            #     assert(par_dict[key].ndim == 2)
             
             "Setup"
             self.num_particles = locs.shape[0]
-            assert(self.num_particles==1)
+            # assert(self.num_particles==1)
             self.num_agents = locs.shape[1]
             
             "Latent Variables"
@@ -701,12 +680,16 @@ class Vbm_B(Vbm):
         # self.k = kwargs["k"]
 
         "Q and rep"
-        self.Q = [self.Q_init]  # Goal-Directed Q-Values
-        self.rep = [
-            jnp.ones((self.num_particles, self.num_agents, self.NA))/self.NA]
-        
-        self.V = []
-        self.update_V(day=1, rep=self.rep, Q=self.Q)
+        self.Q = self.Q_init  # Goal-Directed Q-Values
+        self.rep = jnp.ones((self.num_particles, self.num_agents, self.NA))/self.NA
+
+        self.update_V(day = 1, 
+                      rep = self.rep, 
+                      Q = self.Q,
+                      theta_Q_day1 = self.theta_Q_day1,
+                      theta_Q_day2 = self.theta_Q_day2,
+                      theta_rep_day1 = self.theta_rep_day1,
+                      theta_rep_day2 = self.theta_rep_day2)
         
         self.seq_counter = self.init_seq_counter.copy()
 
@@ -802,7 +785,7 @@ def simulation(num_agents=100, key=None, DataFrame = False, **kwargs):
                   Q_init=jnp.asarray(Q_init))
 
     if 'locs' in kwargs:
-        agent.reset(kwargs['locs'])
+        agent.reset(locs=kwargs['locs'])
     
     if np.all(np.array(sequence)==1):
         newenv = env.Env(agent, 
@@ -825,92 +808,68 @@ def simulation(num_agents=100, key=None, DataFrame = False, **kwargs):
     return out_df, newenv.data, agent
         
 
-def comp_groupdata(groupdata, for_ddm=1):
-    """Trialsequence no jokers and RT are only important for DDM to determine the jokertype"""
+# def comp_groupdata(groupdata, for_ddm=1):
+#     """Trialsequence no jokers and RT are only important for DDM to determine the jokertype"""
 
-    if for_ddm:
-        newgroupdata = {"Trialsequence": [],\
-                        # "Trialsequence no jokers" : [],\
-                        "Choices": [],\
-                        "Outcomes": [],\
-                        "Blocktype": [],\
-                        "Blockidx": [],\
-                        "RT": []}
+#     if for_ddm:
+#         newgroupdata = {"Trialsequence": [],\
+#                         # "Trialsequence no jokers" : [],\
+#                         "Choices": [],\
+#                         "Outcomes": [],\
+#                         "Blocktype": [],\
+#                         "Blockidx": [],\
+#                         "RT": []}
 
-    else:
-        newgroupdata = {"Trialsequence": [],\
-                        # "Trialsequence no jokers" : [],\
-                        "Choices": [],\
-                        "Outcomes": [],\
-                        "Blocktype": [],\
-                        "Blockidx": []}
+#     else:
+#         newgroupdata = {"Trialsequence": [],\
+#                         # "Trialsequence no jokers" : [],\
+#                         "Choices": [],\
+#                         "Outcomes": [],\
+#                         "Blocktype": [],\
+#                         "Blockidx": []}
 
-    for trial in range(len(groupdata[0]["Trialsequence"])):
-        trialsequence = []
-        # trialseq_no_jokers = []
-        choices = []
-        outcomes = []
-        # blocktype = []
-        blockidx = []
-        if for_ddm:
-            RT = []
+#     for trial in range(len(groupdata[0]["Trialsequence"])):
+#         trialsequence = []
+#         # trialseq_no_jokers = []
+#         choices = []
+#         outcomes = []
+#         # blocktype = []
+#         blockidx = []
+#         if for_ddm:
+#             RT = []
 
-        for dt in groupdata:
-            trialsequence.append(dt["Trialsequence"][trial][0])
-            # trialseq_no_jokers.append(dt["Trialsequence no jokers"][trial][0])
-            choices.append(dt["Choices"][trial][0])
-            outcomes.append(dt["Outcomes"][trial][0])
-            # blocktype.append(dt["Blocktype"][trial][0])
-            blockidx.append(dt["Blockidx"][trial][0])
-            if for_ddm:
-                RT.append(dt["RT"][trial][0])
+#         for dt in groupdata:
+#             trialsequence.append(dt["Trialsequence"][trial][0])
+#             # trialseq_no_jokers.append(dt["Trialsequence no jokers"][trial][0])
+#             choices.append(dt["Choices"][trial][0])
+#             outcomes.append(dt["Outcomes"][trial][0])
+#             # blocktype.append(dt["Blocktype"][trial][0])
+#             blockidx.append(dt["Blockidx"][trial][0])
+#             if for_ddm:
+#                 RT.append(dt["RT"][trial][0])
 
-        newgroupdata["Trialsequence"].append(trialsequence)
-        # newgroupdata["Trialsequence no jokers"].append(trialseq_no_jokers)
-        newgroupdata["Choices"].append(jnp.array(choices, dtype=int))
-        newgroupdata["Outcomes"].append(jnp.array(outcomes, dtype=int))
-        # newgroupdata["Blocktype"].append(blocktype)
-        newgroupdata["Blockidx"].append(blockidx)
-        if for_ddm:
-            newgroupdata["RT"].append(RT)
+#         newgroupdata["Trialsequence"].append(trialsequence)
+#         # newgroupdata["Trialsequence no jokers"].append(trialseq_no_jokers)
+#         newgroupdata["Choices"].append(jnp.array(choices, dtype=int))
+#         newgroupdata["Outcomes"].append(jnp.array(outcomes, dtype=int))
+#         # newgroupdata["Blocktype"].append(blocktype)
+#         newgroupdata["Blockidx"].append(blockidx)
+#         if for_ddm:
+#             newgroupdata["RT"].append(RT)
 
-    return newgroupdata
+#     return newgroupdata
 
-def repeat_interleave(x, num):
-    '''
-    Parameters
-    ----------
-    x : jnp array
-        range from 1 to num_agents
-    num : int
-        Number of particles
+# def repeat_interleave(x, num):
+#     '''
+#     Parameters
+#     ----------
+#     x : jnp array
+#         range from 1 to num_agents
+#     num : int
+#         Number of particles
 
 
-    '''
+#     '''
     
-    return jnp.hstack([x[:, None]] * num).reshape(-1)
+#     return jnp.hstack([x[:, None]] * num).reshape(-1)
 
-def plot_simulated(sim_df):
-    '''
-    Jokertypes:
-        -1 no joker
-        0 random
-        1 congruent
-        2 incongruent
-    '''
-    "First remove entries where jokertypes == -1"
-    sim_df = sim_df[sim_df.jokertypes != -1]
-    sim_df = sim_df[sim_df.GDchoice != -2]
-    
-    grouped = sim_df.groupby(['blockidx', 'jokertypes'])
-    average = grouped['GDchoice'].mean()
-    
-    new_df = pd.DataFrame(average)
-    fig,ax = plt.subplots()
-    ax1 = sns.lineplot(data=new_df, x="blockidx", y="GDchoice", hue="jokertypes")
-    plt.ylim([0,1 ])
-    # lines = ax1.get_lines()
-    # ipdb.set_trace()
-    # min_y = np.min([line.get_ydata().min() for line in lines])
-    # plt.plot([5.5, 5.5], [0.6, 1], color = 'k')
-    plt.show()

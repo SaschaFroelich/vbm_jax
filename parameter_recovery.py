@@ -27,20 +27,20 @@ savedir = '/home/sascha/Desktop/vbm_jax/'
 numpyro.set_platform('cpu')
 jax.default_device=jax.devices("cpu")[0]
 
-level = 1
-num_samples = 100
-num_warmup = 50
-num_agents = 1
+level = 2
+num_samples = 500
+num_warmup = 250
+num_agents = 10
 if level == 1:
     num_agents = 1
-
 
 num_sims = 1
 Q_init_group = []
 num_parameters = 6
 k = 4.
 
-key = jran.PRNGKey(np.random.randint(10_000))
+key = jran.PRNGKey(np.random.randint(100_000))
+# key = jran.PRNGKey(1234)
 
 "Simulate with random parameters"
 parameter = jran.uniform(key=key, 
@@ -95,7 +95,7 @@ _, _, agent = mj.simulation(num_agents = num_agents,
 
 if level == 2:
     print("Running group-level inference.")
-    mcmc = inf.perform_grouplevel_inference(agent = agent, 
+    mcmc = inf.perform_grouplevelinference(agent = agent, 
                                  num_samples = num_samples,
                                  num_warmup = num_warmup)
 
@@ -120,7 +120,7 @@ if level == 2:
 
 elif level == 1:
     print("Running first level inference.")
-    mcmc = inf.perform_firstlevel_inference(agent, num_samples, num_warmup)
+    mcmc = inf.perform_firstlevelinference(agent, num_samples, num_warmup)
     samples = mcmc.get_samples()
     
     import pickle

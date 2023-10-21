@@ -559,3 +559,28 @@ def comp_groupdata(groupdata, for_ddm=1):
     return newgroupdata
 
 
+def plot_simulated(sim_df):
+    '''
+    Jokertypes:
+        -1 no joker
+        0 random
+        1 congruent
+        2 incongruent
+    '''
+    "First remove entries where jokertypes == -1"
+    sim_df = sim_df[sim_df.jokertypes != -1]
+    sim_df = sim_df[sim_df.GDchoice != -2]
+    
+    grouped = sim_df.groupby(['blockidx', 'jokertypes'])
+    average = grouped['GDchoice'].mean()
+    
+    new_df = pd.DataFrame(average)
+    fig,ax = plt.subplots()
+    ax1 = sns.lineplot(data=new_df, x="blockidx", y="GDchoice", hue="jokertypes")
+    plt.ylim([0,1 ])
+    # lines = ax1.get_lines()
+    # ipdb.set_trace()
+    # min_y = np.min([line.get_ydata().min() for line in lines])
+    # plt.plot([5.5, 5.5], [0.6, 1], color = 'k')
+    plt.show()
+
