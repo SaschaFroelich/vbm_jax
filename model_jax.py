@@ -120,9 +120,9 @@ class Vbm():
             1 for the corresponding agents' choices (unless error), and 0 otherwise
 
         '''
-
         # assert(Qin.ndim == 3)
-                        
+               
+        "np_error_mask will be True for those subjects that performed no error"         
         no_error_mask = jnp.array(choices) != self.BAD_CHOICE
         "Replace error choices by the number one"
         choices_noerrors = jnp.where(jnp.asarray(no_error_mask, dtype=bool),
@@ -130,18 +130,20 @@ class Vbm():
 
         
         choicemask = jnp.zeros(Qin.shape, dtype=int)
-        num_particles = Qin.shape[0]  # num of particles
+        # num_particles = Qin.shape[0]  # num of particles
         # assert(num_particles==1)
-        num_agents = Qin.shape[1]  # num_agents
-
-        "errormask will be True for those subjects that performed no error"
-        errormask = jnp.array(choices) != self.BAD_CHOICE
-        errormask = jnp.broadcast_to(
-            errormask, (num_particles, 4, num_agents)).transpose(0, 2, 1)
-
+        # num_agents = Qin.shape[1]  # num_agents
+        
+        "Old Code"
+        # no_error_mask = jnp.broadcast_to(
+        #     no_error_mask, (num_particles, 4, num_agents)).transpose(0, 2, 1)
+        # choicemask = jnp.eye(self.NA)[choices_noerrors, ...].astype(int)
+        # mask = no_error_mask*choicemask
+        
+        # dfgh
+        "New Code"
         choicemask = jnp.eye(self.NA)[choices_noerrors, ...].astype(int)
-
-        mask = errormask*choicemask
+        mask = no_error_mask[None,...,None]*choicemask
         
         return Qin*mask, mask
 
@@ -179,6 +181,7 @@ class Vbm():
 
     def compute_probs(self, V, trial):
         '''
+        Only for num_particles = 1
         Parameters
         ----------
         V : array, shape [num_particles, num_agents, 4]
@@ -204,8 +207,12 @@ class Vbm():
         _, mask2 = self.Qoutcomp(V, 1 + (-1 + option2) * (jnp.array(option2) > -1))
         
         ind1_last = jnp.argsort(mask1, axis=-1)[:, :, -1].reshape(-1)
-        ind_all = jnp.array(list(product(jnp.arange(self.num_particles),
-                                          jnp.arange(self.num_agents))))
+        ind_all = jnp.transpose(jnp.stack((jnp.zeros(self.num_agents),
+                                           jnp.arange(self.num_agents)))).astype(int)
+        
+        # ind_all = jnp.array(list(product(jnp.arange(self.num_particles),
+        #                                   jnp.arange(self.num_agents))))
+        
         ind2_last = jnp.argsort(mask2, axis=-1)[:, :, -1].reshape(-1)
         Vopt1 = V[ind_all[:, 0], ind_all[:, 1], ind1_last]
         Vopt2 = V[ind_all[:, 0], ind_all[:, 1], ind2_last]
@@ -352,12 +359,10 @@ class Vbm_B(Vbm):
         V2 = theta_rep * rep[..., 2] + theta_Q*Q[..., 2]
         V3 = theta_rep * rep[..., 3] + theta_Q*Q[..., 3]
 
-        V = jnp.stack((V0, V1, V2, V3), 2)
         self.V = jnp.stack((V0, V1, V2, V3), 2)
-
-        self.V = V
         
-        return V
+        "Return V"
+        return jnp.stack((V0, V1, V2, V3), 2)
 
     def locs_to_pars(self, locs):
         "Model-specific function"
@@ -374,26 +379,39 @@ class Vbm_B(Vbm):
 
         return par_dict
 
-    def update_habitual(self, seq_counter_agent, blocktype, ppp, pp, p, c):
+    # def update_habitual_old(self, seq_counter_agent, blocktype, ppp, pp, p, c):
+    #     indices = jnp.indices(seq_counter_agent.shape)
+    #     pos = (blocktype, ppp, pp, p, c)
+        
+    #     " Update counter "
+    #     seq_counter_agent = jnp.where((indices[0] == pos[0]) & 
+    #                         (indices[1] == pos[1]%6) & 
+    #                         (indices[2] == pos[2]%6) &
+    #                         (indices[3] == pos[3]%6) &
+    #                         (indices[4] == pos[4]%6), seq_counter_agent+1, seq_counter_agent)
+        
+    #     " Update rep values "
+    #     index = (blocktype, pp, p, c)
+
+    #     seqs_sum = seq_counter_agent[index + (0,)] + seq_counter_agent[index + (1,)] + \
+    #                 seq_counter_agent[index + (2,)] + seq_counter_agent[index + (3,)]
+        
+    #     new_row_agent = jnp.asarray([seq_counter_agent[index + (aa,)] / seqs_sum for aa in range(4)])
+    #     return seq_counter_agent, new_row_agent
+    
+    def update_habitual_new(self, seq_counter_agent, blocktype, ppp, pp, p, c):
         indices = jnp.indices(seq_counter_agent.shape)
         pos = (blocktype, ppp, pp, p, c)
         
         " Update counter "
-        seq_counter_agent = jnp.where((indices[0] == pos[0]%6) & 
+        seq_counter_agent = jnp.where((indices[0] == pos[0]) & 
                             (indices[1] == pos[1]%6) & 
                             (indices[2] == pos[2]%6) &
                             (indices[3] == pos[3]%6) &
                             (indices[4] == pos[4]%6), seq_counter_agent+1, seq_counter_agent)
-        
-        " Update rep values "
-        index = (blocktype, pp, p, c)
 
-        seqs_sum = seq_counter_agent[index + (0,)] + seq_counter_agent[index + (1,)] + \
-                    seq_counter_agent[index + (2,)] + seq_counter_agent[index + (3,)]
-        
-        new_row_agent = jnp.asarray([seq_counter_agent[index + (aa,)] / seqs_sum for aa in range(4)])
-        
-        return seq_counter_agent, new_row_agent
+        return seq_counter_agent
+
 
     def update(self, 
                choices, 
@@ -466,11 +484,8 @@ class Vbm_B(Vbm):
 
         lr_day1 : array, shape [num_particles, num_agents]
         '''
-        
-        # assert(lr_day1.ndim==2)
 
-        lr = lr_day1 * (day == 1) + \
-            lr_day2 * (day == 2)
+        lr = lr_day1 * (day == 1) + lr_day2 * (day == 2)
             
         pppchoice = (1 - (trial == -1)) * pppchoice - (trial == -1)
         ppchoice = (1 - (trial == -1)) * ppchoice - (trial == -1)
@@ -481,69 +496,64 @@ class Vbm_B(Vbm):
         "--- Group!!! ----"
         "mask contains 1s where Qoutcomp() contains non-zero entries"
         Qout, mask = self.Qoutcomp(Q, choices)
-        Qnew = Q + lr[..., None] * \
-            (outcome[None, ..., None]-Qout)*mask
+        Qnew = Q + lr[..., None] * (outcome[None, ..., None]-Qout)*mask
         
         Q = Qnew * (trial[0] != -1) + Q * (trial[0] == -1)
         "--- The following is executed in case of correct and incorrect responses ---"
         "----- Update sequence counters and repetition values of self.rep -----"
+        # "--- Old Code"
+        # import time
+        # start = time.time()
+        # seq_counter_old, jrepnew_old = jax.vmap(self.update_habitual_old, in_axes = (0,0,0,0,0,0))(seq_counter, 
+        #                                                         blocktype, 
+        #                                                         pppchoice, 
+        #                                                         ppchoice, 
+        #                                                         pchoice, 
+        #                                                         choices)
         
-        seq_counter, jrepnew = jax.vmap(self.update_habitual, in_axes = (0,0,0,0,0,0))(seq_counter, 
+        # print("Finished old code in %.6f seconds"%(time.time()-start))
+        # "--- Even newer code"
+        # indices = jnp.indices(seq_counter.shape)
+        # pos = (jnp.arange(self.num_agents), blocktype, pppchoice, ppchoice, pchoice, choices)
+        # dfgh
+        # " Update counter "
+        # seq_counter_new = jnp.where((indices[0] == pos[0]) &
+        #                     (indices[1] == pos[1]) & 
+        #                     (indices[2] == pos[2]%6) & 
+        #                     (indices[3] == pos[3]%6) &
+        #                     (indices[4] == pos[4]%6) &
+        #                     (indices[5] == pos[5]%6), seq_counter+1, seq_counter)
+        
+        "--- New Code"
+        seq_counter = jax.vmap(self.update_habitual_new, in_axes = (0,0,0,0,0,0))(seq_counter, 
                                                                 blocktype, 
                                                                 pppchoice, 
                                                                 ppchoice, 
                                                                 pchoice, 
                                                                 choices)
-
-        # "repnew is a list of lists containing the new repetition values for the different agents"
-        # repnew = []
-        # for agent in range(self.num_agents):
-        #     new_row = [0., 0., 0., 0.]
-
-        #     indices = np.indices(seq_counter.shape)
-        #     pos = (agent, 
-        #             blocktype[agent],
-        #             pppchoice[agent],
-        #             ppchoice[agent],
-        #             pchoice[agent],
-        #             choices[agent])
-            
-        #     " Update counter "
-        #     seq_counter = jnp.where((indices[0] == pos[0]) & 
-        #                         (indices[1] == pos[1]) & 
-        #                         (indices[2] == pos[2]) &
-        #                         (indices[3] == pos[3]) &
-        #                         (indices[4] == pos[4]) &
-        #                         (indices[5] == pos[5]), seq_counter+1, seq_counter)
-
-        #     "Update rep values "
-        #     index = (blocktype[agent], 
-        #               ppchoice[agent],
-        #               pchoice[agent], 
-        #               choices[agent])
-            
-        #     seqs_sum = seq_counter[(agent,) + index + (0,)] + seq_counter[(agent,) + index + (1,)] + \
-        #                 seq_counter[(agent,) + index + (2,)] + seq_counter[(agent,) + index + (3,)]
-            
-        #     new_row = [seq_counter[(agent,) + index + (aa,)] / seqs_sum for aa in range(4)]
                 
-        #     "repnew is a list of lists containing the new repetition values for the different agents"
-        #     repnew.append(new_row)
-            
-        # "jrepnew now has shape [num_agents, num_response_options]"
-        # jrepnew = jnp.asarray(repnew)
+        seqs_sum = seq_counter[jnp.arange(self.num_agents), 
+                                    blocktype, 
+                                    ppchoice, 
+                                    pchoice, 
+                                    choices, 
+                                    0:4].sum(axis=-1)
         
-        # print(np.all(jrepnew2==jrepnew))
-        # print(np.all(seq_counter2==seq_counter))
+        jrepnew = seq_counter[jnp.arange(self.num_agents), 
+                                    blocktype, 
+                                    ppchoice, 
+                                    pchoice, 
+                                    choices, 
+                                    0:4] / seqs_sum[...,None]
         
         new_rep = jnp.broadcast_to(jrepnew[None, ...],
-                                   (self.num_particles,
+                                    (self.num_particles,
                                     self.num_agents, 4))
         
         rep = new_rep * (trial[None, :, None] != -1) + jnp.ones((self.num_particles,
                               self.num_agents,
                               self.NA))/self.NA * (trial[None, :, None] == -1)
-
+        
         "----- Compute new V-values for next trial -----"
         V = self.update_V(day = day[0], 
                         rep = rep, 
@@ -558,7 +568,6 @@ class Vbm_B(Vbm):
         pppchoice = ppchoice * (trial != -1) - (trial == -1)
         ppchoice = pchoice * (trial != -1) - (trial == -1)
         pchoice = choices * (trial != -1) - (trial == -1)
-        
         return Q, pppchoice, ppchoice, pchoice, seq_counter, rep, V
 
     def one_session(self, 
@@ -807,69 +816,3 @@ def simulation(num_agents=100, key=None, DataFrame = False, **kwargs):
         
     return out_df, newenv.data, agent
         
-
-# def comp_groupdata(groupdata, for_ddm=1):
-#     """Trialsequence no jokers and RT are only important for DDM to determine the jokertype"""
-
-#     if for_ddm:
-#         newgroupdata = {"Trialsequence": [],\
-#                         # "Trialsequence no jokers" : [],\
-#                         "Choices": [],\
-#                         "Outcomes": [],\
-#                         "Blocktype": [],\
-#                         "Blockidx": [],\
-#                         "RT": []}
-
-#     else:
-#         newgroupdata = {"Trialsequence": [],\
-#                         # "Trialsequence no jokers" : [],\
-#                         "Choices": [],\
-#                         "Outcomes": [],\
-#                         "Blocktype": [],\
-#                         "Blockidx": []}
-
-#     for trial in range(len(groupdata[0]["Trialsequence"])):
-#         trialsequence = []
-#         # trialseq_no_jokers = []
-#         choices = []
-#         outcomes = []
-#         # blocktype = []
-#         blockidx = []
-#         if for_ddm:
-#             RT = []
-
-#         for dt in groupdata:
-#             trialsequence.append(dt["Trialsequence"][trial][0])
-#             # trialseq_no_jokers.append(dt["Trialsequence no jokers"][trial][0])
-#             choices.append(dt["Choices"][trial][0])
-#             outcomes.append(dt["Outcomes"][trial][0])
-#             # blocktype.append(dt["Blocktype"][trial][0])
-#             blockidx.append(dt["Blockidx"][trial][0])
-#             if for_ddm:
-#                 RT.append(dt["RT"][trial][0])
-
-#         newgroupdata["Trialsequence"].append(trialsequence)
-#         # newgroupdata["Trialsequence no jokers"].append(trialseq_no_jokers)
-#         newgroupdata["Choices"].append(jnp.array(choices, dtype=int))
-#         newgroupdata["Outcomes"].append(jnp.array(outcomes, dtype=int))
-#         # newgroupdata["Blocktype"].append(blocktype)
-#         newgroupdata["Blockidx"].append(blockidx)
-#         if for_ddm:
-#             newgroupdata["RT"].append(RT)
-
-#     return newgroupdata
-
-# def repeat_interleave(x, num):
-#     '''
-#     Parameters
-#     ----------
-#     x : jnp array
-#         range from 1 to num_agents
-#     num : int
-#         Number of particles
-
-
-#     '''
-    
-#     return jnp.hstack([x[:, None]] * num).reshape(-1)
-

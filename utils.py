@@ -584,3 +584,49 @@ def plot_simulated(sim_df):
     # plt.plot([5.5, 5.5], [0.6, 1], color = 'k')
     plt.show()
 
+def init_random_agent(num_agents):
+    from jax import random as jran
+    from jax import numpy as jnp
+    from jax import random as jran
+    import model_jax as mj
+    
+    Q_init_group = []
+    npar = 6
+    k = 4.
+    
+    key = jran.PRNGKey(np.random.randint(10000))
+    
+    "Simulate with random parameters"
+    parameter = jran.uniform(key=key, minval=0, maxval=1,
+                             shape=(1, num_agents, npar))
+    _, key = jran.split(key)
+    lr_day1 = parameter[..., 0]*0.01 # so lr_day1 has shape (1, num_agents)
+    theta_Q_day1 = parameter[..., 1]*6
+    theta_rep_day1 = parameter[..., 2]*6
+    
+    lr_day2 = parameter[..., 3]*0.01
+    theta_Q_day2 = parameter[..., 4]*6
+    theta_rep_day2 = parameter[..., 5]*6
+    
+    errorrates_stt = parameter[..., 7]
+    errorrates_dtt = parameter[..., 6]
+    
+    
+    Q_init = jnp.repeat(jnp.asarray([[[0.2, 0., 0., 0.2]]]), 
+                        num_agents,
+                        axis=1)
+    
+    Q_init_group.append(Q_init)
+    
+    agent = mj.Vbm_B(lr_day1=jnp.asarray(lr_day1),
+                  theta_Q_day1=jnp.asarray(theta_Q_day1),
+                  theta_rep_day1=jnp.asarray(theta_rep_day1),
+                  lr_day2=jnp.asarray(lr_day2),
+                  theta_Q_day2=jnp.asarray(theta_Q_day2),
+                  theta_rep_day2=jnp.asarray(theta_rep_day2),
+                  k=k,
+                  errorrates_stt = jnp.asarray(errorrates_stt),
+                  errorrates_dtt = jnp.asarray(errorrates_dtt),
+                  Q_init=jnp.asarray(Q_init))
+    
+    return agent

@@ -30,7 +30,7 @@ jax.default_device=jax.devices("cpu")[0]
 level = 2
 num_samples = 500
 num_warmup = 250
-num_agents = 10
+num_agents = 1
 if level == 1:
     num_agents = 1
 
